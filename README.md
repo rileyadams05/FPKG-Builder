@@ -34,7 +34,9 @@ FPKG Builder is built for 64-bit x86 Linux systems.
 | Arch Linux and Manjaro | `.pkg.tar.zst` | x86-64 |
 | Fedora and compatible RPM-based distributions | `.rpm` | x86-64 |
 
-Installers are available from the [FPKG Builder Releases page](https://github.com/rileyadams05/FPKG-Builder/releases). Each release page includes its installation and usage instructions.
+[![Download latest release](https://img.shields.io/github/v/release/rileyadams05/FPKG-Builder?style=for-the-badge&label=Download%20latest%20release)](https://github.com/rileyadams05/FPKG-Builder/releases/latest)
+
+Each release page includes its installation and usage instructions.
 
 <details>
 <summary>Credits and licensing</summary>
