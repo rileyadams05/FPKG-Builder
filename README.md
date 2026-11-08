@@ -27,7 +27,7 @@ for other distributions is welcome through pull requests Or making your own repo
 <details>
 <summary>Credits and licensing</summary>
 
-FPKG Builder was created and is maintained by ** (`rileyadams05`)**. Its packaging engine incorporates and modifies **LibOrbisPkg**, originally developed by **maxton** and distributed under LGPL-3.0. The upstream license, corresponding source, modifications, and third-party notices are retained in this repository. **Itemzflow**, developed by LightningMods, is the game-dumping application FPKG Builder is designed to work with. Other contributors and upstream projects are credited in the relevant source and notices.
+FPKG Builder was created and is maintained by **[@rileyadams05](https://github.com/rileyadams05)**. Its packaging engine incorporates and modifies **[LibOrbisPkg](https://github.com/maxton/LibOrbisPkg)**, originally developed by **[@maxton](https://github.com/maxton)**, with contributions from **[@Zer0xFF](https://github.com/Zer0xFF)**. LibOrbisPkg is distributed under LGPL-3.0. The upstream license, corresponding source, modifications, and third-party notices are retained in this repository. **Itemzflow**, developed by LightningMods, is the game-dumping application FPKG Builder is designed to work with. Other contributors and upstream projects are credited in the relevant source and notices.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md), [licensing notes](docs/licensing.md), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for contribution, attribution, and license details.
 
