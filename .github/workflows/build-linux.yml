@@ -120,8 +120,8 @@ jobs:
             dbus-run-session -- timeout 12s fpkg-builder > /tmp/fpkg-builder-launch.log 2>&1
           code=$?
           set -e
-          cat /tmp/vortex-launch.log
-          if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then cat /tmp/vortex-launch.log; exit "$code"; fi
+          cat /tmp/fpkg-builder-launch.log
+          if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then cat /tmp/fpkg-builder-launch.log; exit "$code"; fi
           rpm -qpl release-artifacts/linux/*.rpm
           rpm -qp --requires release-artifacts/linux/*.rpm
       - name: Archive source corresponding to this build
@@ -188,7 +188,7 @@ jobs:
           DISPLAY=:117 env -u WAYLAND_DISPLAY -u XAUTHORITY GDK_BACKEND=x11 LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 dbus-run-session -- timeout 12s fpkg-builder > /tmp/fpkg-builder-rpm-launch.log 2>&1
           code=$?
           set -e
-          cat /tmp/vortex-rpm-launch.log
+          cat /tmp/fpkg-builder-rpm-launch.log
           if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then exit "$code"; fi
 
   arch:
@@ -233,7 +233,7 @@ jobs:
           DISPLAY=:117 env -u WAYLAND_DISPLAY -u XAUTHORITY GDK_BACKEND=x11 LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 dbus-run-session -- timeout 12s fpkg-builder > /tmp/fpkg-builder-arch-launch.log 2>&1
           code=$?
           set -e
-          cat /tmp/vortex-arch-launch.log
+          cat /tmp/fpkg-builder-arch-launch.log
           if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then exit "$code"; fi
       - uses: actions/upload-artifact@v4
         with:
