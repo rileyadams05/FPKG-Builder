@@ -210,51 +210,55 @@ jobs:
           cat /tmp/fpkg-builder-rpm-launch.log
           if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then exit "$code"; fi
 
-  arch:
-    needs: linux
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'Release v')
+    needs: [linux, fedora-smoke]
     runs-on: ubuntu-24.04
-    container: archlinux:latest
+    permissions:
+      contents: write
+      actions: read
     steps:
-      - name: Prepare Arch container tools
-        run: pacman -Sy --noconfirm base-devel gtk3 webkit2gtk-4.1 libayatana-appindicator librsvg xorg-server-xvfb ttf-dejavu sudo
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: linux-packages-and-binary
-          path: /tmp/linux-input
-      - name: Create and verify Arch package
+          path: release-artifacts/incoming
+      - name: Validate version and stage release assets
+        id: release-version
+        env:
+          RELEASE_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p src-tauri/target/release src-tauri/resources release-artifacts/arch
-          cp /tmp/linux-input/src-tauri/target/release/fpkg-builder src-tauri/target/release/
-          # Package the shared frontend binary and self-contained helper produced by the Linux job.
-          cp -a /tmp/linux-input/src-tauri/resources/engine src-tauri/resources/
-          cp -a /tmp/linux-input/src-tauri/resources/licenses src-tauri/resources/
-          cp /tmp/linux-input/src-tauri/resources/THIRD_PARTY_NOTICES.md src-tauri/resources/
-          cp /tmp/linux-input/src-tauri/resources/LibOrbisPkg-LICENSE.txt src-tauri/resources/
-          cp /tmp/linux-input/src-tauri/resources/THIRD_PARTY_DEPENDENCY_LICENSES.md src-tauri/resources/
-          cp packaging/PKGBUILD PKGBUILD
-          useradd --create-home builder
-          chown -R builder:builder "$GITHUB_WORKSPACE"
-          su builder -c "cd '$GITHUB_WORKSPACE' && makepkg --syncdeps --noconfirm --force"
-          install -Dm644 ./*.pkg.tar.zst release-artifacts/arch/
-          pacman -U --noconfirm release-artifacts/arch/*.pkg.tar.zst
-          Xvfb :117 -screen 0 1280x900x24 -nolisten tcp -ac > /tmp/vortex-arch-xvfb.log 2>&1 &
-          xvfb_pid=$!
-          trap 'kill "$xvfb_pid" 2>/dev/null || true' EXIT
-          for _ in $(seq 1 30); do
-            [[ -S /tmp/.X11-unix/X117 ]] && break
-            sleep 0.25
+          version="$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")"
+          tag="v${version}"
+          [[ "$RELEASE_COMMIT_MESSAGE" == "Release ${tag}"* ]]
+          test "$(node -p "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json','utf8')).version")" = "$version"
+          test "$(node -p "JSON.parse(require('fs').readFileSync('package-lock.json','utf8')).version")" = "$version"
+          test "$(sed -n 's/^version = "\([^"]*\)"$/\1/p' src-tauri/Cargo.toml | head -n1)" = "$version"
+          mkdir -p release-artifacts/publish
+          for suffix in deb rpm; do
+            name="FPKG-Builder-${version}-linux-x64.${suffix}"
+            file="$(find release-artifacts/incoming -type f -name "$name" -print -quit)"
+            test -n "$file"
+            cp "$file" release-artifacts/publish/
           done
-          kill -0 "$xvfb_pid"
-          set +e
-          DISPLAY=:117 env -u WAYLAND_DISPLAY -u XAUTHORITY GDK_BACKEND=x11 LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 dbus-run-session -- timeout 12s fpkg-builder > /tmp/fpkg-builder-arch-launch.log 2>&1
-          code=$?
-          set -e
-          cat /tmp/fpkg-builder-arch-launch.log
-          if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then exit "$code"; fi
-      - uses: actions/upload-artifact@v4
+          source="$(find release-artifacts/incoming -type f -name "FPKG-Builder-${version}-source.zip" -print -quit)"
+          test -n "$source"
+          cp "$source" release-artifacts/publish/
+          (cd release-artifacts/publish && sha256sum *.deb *.rpm *-source.zip > SHA256SUMS)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          find release-artifacts/publish -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: arch-package
-          path: release-artifacts/arch/*.pkg.tar.zst
+          tag_name: ${{ steps.release-version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: FPKG Builder v${{ steps.release-version.outputs.version }}
+          body_path: docs/releases/v${{ steps.release-version.outputs.version }}.md
+          files: release-artifacts/publish/*
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
+          make_latest: true

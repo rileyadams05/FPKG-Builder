@@ -1,6 +1,6 @@
 # Focused Itemzflow-to-fPKG assessment
 
-Assessment date: 7 November 2026. FPKG Builder is an Itemzflow-focused post-dump packaging companion. Itemzflow dumps PS4 games; FPKG Builder selects a dump, reuses its GP4 when possible, builds an fPKG through LibOrbisPkg, and reports the validator result. It is not a dumper, game manager, package explorer, extraction suite, or GP4 editor.
+Assessment date: 8 November 2026. FPKG Builder is an Itemzflow-focused post-dump packaging companion. Itemzflow dumps PS4 games; FPKG Builder accepts the prepared `Itemzflow` folder, reuses GP4 projects where possible, combines a base game and matching update into one fPKG through LibOrbisPkg, and reports validation results. It is not a dumper, game manager, package explorer, extraction suite, or GP4 editor.
 
 ## What Itemzflow already produces
 
@@ -34,16 +34,16 @@ The helper is bundled self-contained without a manually installed .NET SDK. `Lib
 
 The supported workflow is one base game and its matching update combined into one app `.pkg`. DLC is intentionally excluded. Synthetic base-plus-update fixtures pass the available LibOrbisPkg package validation. Real Itemzflow GP4 variations and PS4 installation/gameplay still require console testing. Package structural checks do not prove that a package will install or run on a PS4.
 
-The target is PS4 Linux Mint 22.3 XFCE x86-64 using Tauri 2 and system WebKitGTK. The current Linux pipeline uses Ubuntu x86-64 and builds Arch in an Arch container. Package/helper installation and startup have been smoke-tested in Ubuntu 24.04, Fedora 45, and an Arch Linux container. Mint's WebKit integration, resource use on PS4 hardware, real Itemzflow dump processing, interactive desktop behavior, and console installation testing remain open. Cross-publishing alone does not pass those gates.
+The target is PS4 Linux Mint 22.3 XFCE x86-64 using Tauri 2 and system WebKitGTK. The official CI builds Debian and RPM packages on Ubuntu x86-64 and tests Debian installation/launch on Ubuntu and RPM installation/launch on Fedora. Arch Linux and Manjaro are not official package targets. Mint's WebKit integration, resource use on PS4 hardware, real Itemzflow dump processing, and console installation testing remain open.
 
 ## Current delivery status
 
 - **Source:** Tauri 2 frontend, Rust command/event bridge, .NET 8 helper, focused docs, licensing notes, desktop launcher, and CI workflows are present.
 - **Frontend:** `npm run build` succeeds. Windows application builds are out of scope; Linux is the supported desktop target.
-- **Existing Linux installers:** the staged v0.1.0 `.deb`, `.rpm`, and `.pkg.tar.zst` were built and smoke-tested before the current merged-update workflow. They are preserved and have not been rebuilt from the current source changes.
+- **Distribution:** the official Linux formats are `.deb` for Linux Mint/Ubuntu/Debian and `.rpm` for Fedora-compatible distributions. The older Arch package work is retained only as historical testing documentation; no Arch package is built or officially maintained.
 - **Windows:** application builds are out of scope. Windows remains the development host only.
-- **GitHub Actions:** the Linux workflow has been updated to test the Itemzflow-parent input and combined base/update package. It has not yet run against these current local changes. The Windows host could not run Linux Tauri builds here: WSL returned `Wsl/E_ACCESSDENIED`.
-- **Website/release:** no website changes were made. The existing v0.1.0 GitHub release contains the earlier build; the current source changes have not been published as a new release.
+- **GitHub Actions:** run [42473961512](https://github.com/rileyadams05/FPKG-Builder/actions/runs/42473961512) passed the Linux, Fedora, and historical Arch jobs on commit `3488d21856b6f147fdc808d9b7b73b175bdcedad`. That run used v0.1.0 metadata, so its package artifacts are not reused for v0.1.1. The release workflow rebuilds versioned packages on the release commit and publishes only after the Debian/RPM checks succeed.
+- **PS4 and website:** hardware testing with a real Itemzflow dump remains Riley's next step. No website changes are in scope.
 
 ## Licensing
 

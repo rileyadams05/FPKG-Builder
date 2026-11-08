@@ -1,42 +1,26 @@
-# Test and verification record
+# Build and test record
 
-## Current drag-and-drop workflow changes (8 November 2026)
+## Release build checks
 
-- `npm test` passed (2 tests); `npm run build` completed.
-- The .NET 8 helper built with zero warnings and errors.
-- A synthetic Itemzflow folder containing an existing base GP4, matching `pkg_ps4_patch` GP4, a DLC-named folder, a `.complete` marker, and a log produced exactly one `.pkg`. LibOrbisPkg validation passed. Both GP4s, marker and log remained in the source tree.
-- A synthetic base-only Itemzflow folder with no GP4 and no `.complete` marker produced exactly one validated `.pkg`; GP4 generation was in memory and no GP4 was written to the dump.
-- `cargo fmt --check` passes. A native Tauri compile could not be run in this Windows session because Rust's MSVC target cannot find `link.exe`; WSL reports `Wsl/E_ACCESSDENIED`. Therefore the updated native bridge and Linux installer have not yet been compiled in this turn.
-- The Linux and console test results below describe the previously packaged v0.1.0 build, whose interface predates the current drag-and-drop and merged-update changes. They are not verification of this updated application build.
+The `Linux packages` GitHub Actions workflow runs against the exact source commit used for a release. Publishing is gated on successful completion of both the Linux build/fixture job and the Fedora package-install/launch job.
 
-## Verified in Linux environments
+The Linux job:
 
-- Repaired the existing Ubuntu 24.04 WSL distro, converted it from WSL 1 to WSL 2, and verified systemd and the Linux toolchain start.
-- `npm test` passed (2 tests) and the production Vite frontend built successfully.
-- Published the existing .NET 8/LibOrbisPkg helper as a self-contained `linux-x64` ELF executable.
-- Native helper fixtures passed for GP4 generation, GP4 reuse, measured progress, successful PKG validation, unchanged reused-GP4 hash, and invalid-input rejection. The generated fixture package was 35,192,832 bytes; the reused-GP4 fixture package was 6,619,136 bytes.
-- Rebased an existing fixture GP4 whose `orig_path` entries pointed into `/mnt/usb0/CUSA00001` onto the selected Linux dump using each GP4 `targ_path`. Reuse and package validation passed, and the original GP4 SHA-256 remained unchanged. The same regression case is now part of the Linux CI fixture job.
-- Submitted that same rebased project as a direct `.gp4` input; it built and passed package validation, and the source GP4 checksum remained unchanged. Direct GP4-file processing is covered by the Linux CI fixture job.
-- The helper installed by the `.deb` generated and validated a synthetic fPKG and emitted structured completion/progress events.
-- `npm run tauri:build -- --bundles deb,rpm` completed successfully on Ubuntu 24.04 x86-64 after the demo-state isolation fix. Both bundles are about 33.7 MiB.
-- Installed the refreshed `.deb` in Ubuntu 24.04 and ran the packaged Tauri app as an unprivileged user under Xvfb. The opening screen, preview menu, labelled demo progress, demo success, and demo error screens rendered. Scrolling exposed the lower controls.
-- Through the installed app’s manual path field, packaged a synthetic Itemzflow-style fixture. The GUI received helper events, showed the package path and size, and displayed success only after LibOrbisPkg validation passed. Continue returned to the opening screen and retained the user’s configured output directory; demo sample paths no longer overwrite it.
-- Through the installed app’s manual path field, submitted a standalone `.gp4` project whose `orig_path` entries pointed to `/mnt/usb0/CUSA00002`. The packaged GUI automatically reused the project, resolved its files against the GP4 directory by `targ_path`, built a 6,619,136-byte PKG, and showed the validated success screen. The GP4 SHA-256 was unchanged.
-- Submitted a nonexistent path through the installed GUI. The native error screen displayed a readable message, and **Choose another game** returned to the opening screen.
-- Verified Linux Itemzflow discovery with a controlled `settings.ini` containing `[Settings]` and `Dumper_Path=/tmp/vortex-itemzflow-discovery`; the helper emitted the fixture as a `dump-candidate` and reported discovery completion. The Linux CI fixture now also checks an accessible `Dumper_Path`, a `<TITLE_ID>` child dump, and detection of its existing GP4.
-- Installed the `.rpm` in Fedora 45, verified the installed command, and kept the app running under Xvfb until the 15-second timeout.
-- Built the Arch `.pkg.tar.zst` with `makepkg` in an Arch Linux container, installed it with `pacman -U`, and kept the app running under Xvfb until the 15-second timeout.
-- Verified SHA-256 checksums for all three staged installers.
-- Built and extracted the source archive; verified that it contains the application, modified LibOrbisPkg source, workflows, license texts and PS4 test procedure, with portable ZIP paths and no generated binaries. Its SHA-256 check passed.
+- Publishes the .NET 8 helper as a self-contained `linux-x64` application.
+- Exercises generated and existing GP4 paths, including GP4s with Orbis-style source paths, and checks that existing GP4 files remain unchanged.
+- Processes a base-game fixture with a matching update fixture and checks for the single expected `.pkg` output, package validation, and unchanged source GP4s.
+- Includes optional DLC-named fixture content, log files, and completion markers to verify they do not become extra package outputs or get modified.
+- Checks structured measured-progress events and rejects invalid input.
+- Builds the Tauri `.deb` and `.rpm`, installs the `.deb` on Ubuntu, and smoke-launches the app.
 
-The Tauri build exposed and fixed two Linux issues: resource directories now use explicit directory mappings, and the serialized `BuildError` event derives `Clone` as required by Tauri's emitter. The Arch build exposed a `makepkg --cleanbuild` collision with the app's `src/` tree; the workflow now preserves that source directory. The Arch job also now copies the required licence files and uses a shared `packaging/PKGBUILD`.
+The Fedora job installs the generated `.rpm` and smoke-launches the GUI. The release job then checks that version metadata agrees, prepares only the `.deb`, `.rpm`, source archive, and `SHA256SUMS`, and creates the matching GitHub Release. No Arch package is built or released.
 
-## Not verified
+## Previously completed Linux run
 
-- GitHub Actions run [42450558333](https://github.com/rileyadams05/FPKG-Builder/actions/runs/42450558333) passed the Linux build and `.deb` install/launch check, the Fedora RPM smoke check, and the Arch package build/install/launch check. It also ran GP4 reuse, generation, package build, progress, and validation fixtures.
-- The native GTK folder picker opened and selected a synthetic dump under Xvfb; that selection triggered a package build and validation through the packaged GUI. OS-level drag-and-drop was not exercised. GUI tests ran under Xvfb, not in a full Mint/XFCE desktop session.
-- Linux Mint 22.3 XFCE on the PS4 has not been tested. The console and real dump are not available in this environment.
-- No real Itemzflow dump has been packaged. The package fixtures use synthetic data.
-- Structural LibOrbisPkg validation does not prove an fPKG installs or runs on PS4. Console installation/gameplay testing remains pending.
-- Patch and DLC compatibility is not claimed.
-- Windows app builds are out of scope.
+GitHub Actions run [42473961512](https://github.com/rileyadams05/FPKG-Builder/actions/runs/42473961512) passed on source commit `3488d21856b6f147fdc808d9b7b73b175bdcedad`. The Linux fixture/build job and Fedora and Arch jobs all succeeded. This run used version `0.1.0` metadata, so its package files are not reused for the `0.1.1` release. The versioned release workflow builds new packages from its own release commit before publishing.
+
+Earlier Arch package smoke checks are retained here as development history only. Arch and Manjaro are not official package targets.
+
+## Still requires PS4 testing
+
+No real Itemzflow game dump has been tested on PS4 Linux Mint hardware in this build environment. Riley will perform the console test. Structural LibOrbisPkg validation confirms available package checks only; it does not prove PS4 installation or gameplay compatibility. The Linux Mint 22.3 XFCE PS4 test checklist is in [`ps4-linux-mint-test.md`](ps4-linux-mint-test.md).

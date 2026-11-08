@@ -1,6 +1,6 @@
 [package]
 name = "fpkg-builder"
-version = "0.1.0"
+version = "0.1.1"
 description = "Build fPKGs from compatible Itemzflow dumps"
 authors = ["FPKG Builder contributors"]
 repository = "https://github.com/rileyadams05/FPKG-Builder"

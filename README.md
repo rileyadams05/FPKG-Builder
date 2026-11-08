@@ -1,48 +1,38 @@
 # FPKG Builder
 
-FPKG Builder is a Linux desktop application for creating PS4 fPKG packages from game dumps made with Itemzflow. It is designed to run on the PS4 itself, so you can finish packaging there without transferring a large game dump to a separate Windows PC.
+FPKG Builder is a Linux desktop application for turning Itemzflow game dumps into PS4 fake package files (fPKGs). Itemzflow handles dumping the game; FPKG Builder handles the packaging stage, allowing the work to be done on a PS4 that is already running Linux instead of transferring a large dump to a separate Windows PC.
 
-Itemzflow handles the game dump; FPKG Builder handles packaging. Drop the complete `Itemzflow` folder containing one game's base dump and, if available, its matching `-patch` update. FPKG Builder reuses Itemzflow's GP4 projects when possible, prepares a project when needed, combines the base game and update into one fPKG, reports build progress, validates the package, and then asks where to save the finished `.pkg` file.
+The application accepts the prepared `Itemzflow` folder by drag and drop. It handles a base-game dump and its matching game update together as one `.pkg` output. It reuses suitable GP4 projects from Itemzflow when available, prepares missing project data in memory, shows measured build progress, validates the completed package, and then asks where to save it. The dump and GP4 files are left in place. Optional Itemzflow logs and completion-marker files are ignored and left untouched.
 
-FPKG Builder leaves the Itemzflow folder and its contents in place. This includes GP4 files, logs, and `.complete` marker files when they are present. The builder ignores the marker files and leaves them untouched; they can be present or absent.
+FPKG Builder requires a PS4 with a jailbreak that works with the console and its Linux setup, Linux installed and configured on the PS4, Itemzflow installed and used to create the dump, and enough storage for the package. A computer is ordinarily required to set up a PS4 jailbreak and Linux; a Raspberry Pi setup method is another option. FPKG Builder is for the packaging work after that setup is complete. It does not jailbreak a console, install Linux, dump games, or install the finished fPKG onto the PS4.
 
 ## Package support
 
-FPKG Builder handles base-game dumps and their matching game updates in a single package. This application does not process DLC.
-
-The finished fPKG is saved for use with your existing PS4 package-installation method. FPKG Builder does not install packages on the console, dump games, install Linux, or jailbreak a PS4.
-
-## Requirements
-
-To use FPKG Builder, you need:
-
-- A PS4 with a jailbreak that works with your console and supports your Linux setup.
-- Linux installed and set up on the PS4.
-- Itemzflow installed on the PS4 and used to create the game dump.
-- Enough free storage for the package being built.
-
-Setting up the PS4 jailbreak and installing Linux normally requires a computer, or a Raspberry Pi method can be used instead for that setup. Once Linux and Itemzflow are running on the PS4, FPKG Builder lets you perform the packaging on the console.
+The initial workflow combines one base game with its matching update in a single package. DLC is not included in this application. The finished package must be installed separately using the user's existing PS4 package-installation method.
 
 ## Linux compatibility
 
-FPKG Builder is built for 64-bit x86 Linux systems.
+FPKG Builder packages target 64-bit x86 Linux systems.
 
-| Linux distribution | Package format | Architecture |
+| Linux distribution | Installer | Architecture |
 |---|---|---|
-| Linux Mint, including Linux Mint 22.3 XFCE | `.deb` | x86-64 |
+| Linux Mint, including 22.3 XFCE | `.deb` | x86-64 |
 | Ubuntu and Debian | `.deb` | x86-64 |
-| Arch Linux and Manjaro | `.pkg.tar.zst` | x86-64 |
 | Fedora and compatible RPM-based distributions | `.rpm` | x86-64 |
 
 [![Download latest release](https://img.shields.io/github/v/release/rileyadams05/FPKG-Builder?style=for-the-badge&label=Download%20latest%20release)](https://github.com/rileyadams05/FPKG-Builder/releases/latest)
 
-Each release page includes its installation and usage instructions.
+Release downloads include installation and Itemzflow-to-fPKG instructions. Community packaging for other distributions is welcome through pull requests, but a format is not officially supported until it has been reviewed and tested. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Project and release status
+
+The current application version is **0.1.1**. GitHub Actions builds the Linux packages from the same Tauri 2 interface and .NET 8/LibOrbisPkg engine, runs controlled base-game and base-plus-update fixtures, validates package output, installs and launches the Debian package, and installs and launches the RPM package in Fedora. Testing with a real Itemzflow dump on PS4 Linux Mint hardware is for the user to perform; package validation does not establish that a package installs or runs on a PS4.
 
 <details>
 <summary>Credits and licensing</summary>
 
-FPKG Builder uses and modifies [LibOrbisPkg](https://github.com/maxton/LibOrbisPkg), created by maxton. LibOrbisPkg is licensed under LGPL-3.0. Its licence and applicable third-party notices are included in this repository.
+FPKG Builder was created and is maintained by **Riley Adams (`rileyadams05`)**. Its packaging engine incorporates and modifies **LibOrbisPkg**, originally developed by **maxton** and distributed under LGPL-3.0. The upstream license, corresponding source, modifications, and third-party notices are retained in this repository. **Itemzflow**, developed by LightningMods, is the game-dumping application FPKG Builder is designed to work with. Other contributors and upstream projects are credited in the relevant source and notices.
 
-[Itemzflow](https://github.com/LightningMods/Itemzflow), developed by LightningMods, provides the game-dumping workflow that FPKG Builder is designed to package.
+See [CONTRIBUTING.md](CONTRIBUTING.md), [licensing notes](docs/licensing.md), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for contribution, attribution, and license details.
 
 </details>

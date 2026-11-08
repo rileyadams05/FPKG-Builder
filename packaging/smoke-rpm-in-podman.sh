@@ -9,7 +9,7 @@ podman run -i --network=host --rm \
 set -euo pipefail
 dnf -y install gtk3 webkit2gtk4.1 libayatana-appindicator-gtk3 \
   xorg-x11-server-Xvfb dejavu-sans-fonts dbus-daemon \
-  /artifacts/FPKG-Builder-0.1.0-linux-x64.rpm
+  /artifacts/FPKG-Builder-0.1.1-linux-x64.rpm
 rpm -q fpkg-builder
 command -v fpkg-builder
 Xvfb :117 -screen 0 1280x900x24 -nolisten tcp -ac >/tmp/vortex-rpm-xvfb.log 2>&1 &

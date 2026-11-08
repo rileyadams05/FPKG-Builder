@@ -1,50 +1,22 @@
 # PS4 Linux Mint test checklist
 
-This checklist records the first on-console test for the Linux x86-64 `.deb`. Package validation by LibOrbisPkg is structural; it does not prove the resulting fPKG installs or runs on a PS4.
+This checklist is for the first user-run test of the Linux x86-64 `.deb` on PS4 Linux Mint. Package validation is structural and does not prove that a package installs or runs on PS4.
 
 ## Install and launch
 
-1. Download the `FPKG-Builder-0.1.0-linux-x64.deb` asset from the [v0.1.0 GitHub Release](https://github.com/rileyadams05/FPKG-Builder/releases/tag/v0.1.0). This package passed automated Linux smoke checks, but PS4 hardware testing is still pending.
-2. Confirm the system is x86-64 and identify the Mint release:
+1. From the [latest GitHub Release](https://github.com/rileyadams05/FPKG-Builder/releases/latest), download `FPKG-Builder-0.1.1-linux-x64.deb` and verify it against the listed `SHA256SUMS` if desired.
+2. Confirm the Linux installation is 64-bit x86 (`uname -m` should report `x86_64`).
+3. Install the `.deb` using Linux Mint's graphical package installer or `sudo apt install ./FPKG-Builder-0.1.1-linux-x64.deb`.
+4. Open **FPKG Builder** from the application menu as the ordinary user.
 
-   ```sh
-   uname -m
-   cat /etc/os-release
-   ```
+## Test a base game and optional update
 
-   The expected architecture is `x86_64`. This build has not yet been tested on Mint 22.3 on PS4 hardware.
-3. Install the package and dependencies:
+1. Let Itemzflow finish the game dump. If including an update, make sure it is the matching `<TITLE_ID>-patch` folder for the base game.
+2. Put the base-game folder and matching patch folder inside the parent folder named `Itemzflow`. Itemzflow-generated GP4 files should stay beside their game data. `.complete` marker files and logs may be present or absent; FPKG Builder ignores them and leaves them alone.
+3. Connect or mount the storage in Linux and note its Linux mount path. An Orbis path such as `/mnt/usb0` is not automatically available under Linux.
+4. Drag and drop the whole `Itemzflow` folder onto the application. There is no separate build step. Processing should start automatically.
+5. Check that the app processes the base game and matching update into one package, reports measured progress, and shows completion only after package validation. When prompted, choose where to save the `.pkg` file.
+6. Confirm the original game files and GP4 files remain present and unchanged. If you have a GP4 checksum, compare it before and after.
+7. Use your existing local PS4 package-installation method to test the resulting fPKG. FPKG Builder does not install it to the console.
 
-   ```sh
-   sudo apt install ./FPKG-Builder-0.1.0-linux-x64.deb
-   ```
-
-4. Launch **FPKG Builder** from the desktop menu as the ordinary user. Do not run the app with `sudo`.
-
-## Process one base-game dump
-
-1. Mount the storage containing the Itemzflow dump in Linux. The application cannot mount Orbis filesystems or translate an Orbis path that is not mounted.
-2. Check the output destination has enough free space. The estimate is based on source bytes plus a safety margin; large dumps need substantial free space.
-3. If the app discovers the dump automatically, select its candidate. Otherwise browse to the directory containing `sce_sys/param.sfo` or enter its Linux path. Start with a base-game dump; patch and DLC support is unverified.
-4. If the dump contains an Itemzflow `.gp4`, confirm the app reports that it is reusing the existing project. If there is no usable GP4, generation should happen in memory; the dump should not gain or lose files.
-5. Let packaging and LibOrbisPkg validation finish. Record the displayed output path, package size, and validation status. A successful validation is not an installation or gameplay test.
-6. Verify the output exists and record its checksum:
-
-   ```sh
-   ls -lh "/path/to/output/package.pkg"
-   sha256sum "/path/to/output/package.pkg"
-   ```
-
-7. If an existing GP4 was present, record its checksum before the build and verify it afterward:
-
-   ```sh
-   GP4="/path/to/dump/CUSA12345.gp4"
-   sha256sum "$GP4" > /tmp/itemzflow-gp4-before.sha256
-   # Run the build in the application, then:
-   sha256sum -c /tmp/itemzflow-gp4-before.sha256
-   ```
-
-   It should report `OK`. The application must not modify that project or the game dump.
-8. If a failure occurs, save the readable error and optional diagnostic details. The app must not show success or leave a completed-looking package after a failed build.
-
-Do not interpret the structural validation result as proof of PS4 installation or runtime compatibility. Keep those results separate when recording the test.
+DLC is outside this application's scope and should not be placed into the base/update build. Record any error text and the package validation result separately from PS4 installation or gameplay results.

@@ -1,5 +1,7 @@
 # Third-party notices
 
+FPKG Builder was created and is maintained by Riley Adams (`rileyadams05`). The credits below identify upstream projects whose code or technical work FPKG Builder uses or references. Other contributors remain credited by their respective projects and in the affected source files where applicable.
+
 ## LibOrbisPkg
 
 The packaging engine incorporates `LibOrbisPkg.Core` from [maxton/LibOrbisPkg](https://github.com/maxton/LibOrbisPkg), pinned to commit `643477263b2644e0803e0f58b8726ea4e3f3b7d4`. It is licensed under GNU LGPL version 3.0; the complete license is distributed as `LibOrbisPkg-LICENSE.txt` and retained at `vendor/LibOrbisPkg/LICENSE.txt`.
