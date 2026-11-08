@@ -4,7 +4,7 @@ FPKG Builder brings together project code and third-party components that retain
 
 ## Project attribution
 
-FPKG Builder was created and is maintained by Riley Adams (`rileyadams05`). The repository and derivative distributions should preserve this project attribution together with all upstream attribution and copyright notices applicable to included code.
+FPKG Builder was created and is maintained by(`rileyadams05`). The repository and derivative distributions should preserve this project attribution together with all upstream attribution and copyright notices applicable to included code.
 
 ## LibOrbisPkg
 
