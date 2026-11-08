@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "FPKG Builder",
+  "version": "0.1.0",
+  "identifier": "io.github.rileyadams05.fpkgbuilder",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "FPKG Builder",
+        "width": 1024,
+        "height": 780,
+        "minWidth": 680,
+        "minHeight": 620,
+        "center": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb", "rpm"],
+    "category": "Utility",
+    "shortDescription": "Build fPKGs from Itemzflow game dumps",
+    "longDescription": "Reuses Itemzflow GP4 projects where possible and builds packages with LibOrbisPkg.",
+    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "resources": {
+      "resources/engine/": "resources/engine/",
+      "resources/licenses/": "resources/licenses/",
+      "resources/THIRD_PARTY_NOTICES.md": "resources/THIRD_PARTY_NOTICES.md",
+      "resources/THIRD_PARTY_DEPENDENCY_LICENSES.md": "resources/THIRD_PARTY_DEPENDENCY_LICENSES.md",
+      "resources/LibOrbisPkg-LICENSE.txt": "resources/LibOrbisPkg-LICENSE.txt"
+    },
+    "linux": {
+      "deb": {
+        "depends": ["libayatana-appindicator3-1"]
+      },
+      "rpm": {
+        "depends": ["webkit2gtk4.1", "gtk3", "libayatana-appindicator-gtk3"]
+      }
+    }
+  }
+}

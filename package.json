@@ -1,0 +1,27 @@
+{
+  "name": "fpkg-builder",
+  "version": "0.1.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rileyadams05/FPKG-Builder.git"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 1420",
+    "build": "vite build",
+    "test": "node --test src/format.test.js",
+    "preview": "vite preview --host 127.0.0.1 --port 1420",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.3",
+    "@tauri-apps/plugin-dialog": "2.8.2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.2",
+    "vite": "6.4.1"
+  }
+}

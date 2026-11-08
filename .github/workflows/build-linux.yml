@@ -1,0 +1,241 @@
+name: Linux packages
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl wget file libssl-dev libgtk-3-dev \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf \
+            xvfb jq rpm zip dbus-daemon
+      - name: Publish bundled Linux engine
+        run: |
+          rm -rf src-tauri/resources/engine
+          mkdir -p src-tauri/resources/engine
+          dotnet publish src/Vortex.Engine.Poc/Vortex.Engine.Poc.csproj -c Release -r linux-x64 \
+            --self-contained true -p:PublishSingleFile=false -p:DebugType=None \
+            -o src-tauri/resources/engine
+          mv src-tauri/resources/engine/Vortex.Engine.Poc src-tauri/resources/engine/vortex-engine
+          chmod 755 src-tauri/resources/engine/vortex-engine
+          cp vendor/LibOrbisPkg/LICENSE.txt src-tauri/resources/LibOrbisPkg-LICENSE.txt
+          cp THIRD_PARTY_NOTICES.md src-tauri/resources/THIRD_PARTY_NOTICES.md
+      - name: Test GP4 reuse, generation, package build, progress and validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper="$PWD/src-tauri/resources/engine/vortex-engine"
+          testroot="$(mktemp -d)"
+          "$helper" fixture "$testroot/generated"
+          truncate -s 33554432 "$testroot/generated/content.bin"
+          "$helper" process "$testroot/generated" "$testroot/out-generated" > "$testroot/generated.jsonl"
+          jq -e 'select(.event == "gp4-ready" and .mode == "generated")' "$testroot/generated.jsonl" >/dev/null
+          jq -e 'select(.event == "completed" and .validation == "passed")' "$testroot/generated.jsonl" >/dev/null
+          jq -e 'select(.event == "build-progress" and .bytesTotal != null and .bytesProcessed >= 0)' "$testroot/generated.jsonl" >/dev/null
+          test ! -e "$testroot/generated/CUSA00001.gp4"
+          "$helper" fixture "$testroot/reused"
+          "$helper" gp4 "$testroot/reused" "$testroot/reused/CUSA00001.gp4"
+          python3 - "$testroot/reused/CUSA00001.gp4" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          path = sys.argv[1]
+          project = ET.parse(path)
+          for entry in project.findall('.//file'):
+              target = entry.attrib['targ_path']
+              entry.set('orig_path', '/mnt/usb0/CUSA00001/' + target)
+          project.write(path, encoding='utf-8', xml_declaration=True)
+          PY
+          gp4_hash="$(sha256sum "$testroot/reused/CUSA00001.gp4" | cut -d' ' -f1)"
+          "$helper" process "$testroot/reused" "$testroot/out-reused" > "$testroot/reused.jsonl"
+          jq -e 'select(.event == "gp4-ready" and .mode == "reused")' "$testroot/reused.jsonl" >/dev/null
+          jq -e 'select(.event == "completed" and .validation == "passed")' "$testroot/reused.jsonl" >/dev/null
+          test "$gp4_hash" = "$(sha256sum "$testroot/reused/CUSA00001.gp4" | cut -d' ' -f1)"
+          "$helper" process "$testroot/reused/CUSA00001.gp4" "$testroot/out-direct-gp4" > "$testroot/direct-gp4.jsonl"
+          jq -e 'select(.event == "gp4-ready" and .mode == "reused")' "$testroot/direct-gp4.jsonl" >/dev/null
+          jq -e 'select(.event == "completed" and .validation == "passed")' "$testroot/direct-gp4.jsonl" >/dev/null
+          test "$gp4_hash" = "$(sha256sum "$testroot/reused/CUSA00001.gp4" | cut -d' ' -f1)"
+          mkdir -p "$testroot/itemzflow"
+          "$helper" fixture "$testroot/itemzflow/CUSA00001"
+          "$helper" gp4 "$testroot/itemzflow/CUSA00001" "$testroot/itemzflow/CUSA00001/CUSA00001.gp4"
+          printf '[Settings]\nDumper_Path=%s\n' "$testroot/itemzflow" > "$testroot/settings.ini"
+          "$helper" discover "$testroot/settings.ini" > "$testroot/discovery.jsonl"
+          jq -e --arg dump "$testroot/itemzflow/CUSA00001" 'select(.event == "dump-candidate" and .path == $dump and .hasGp4 == true)' "$testroot/discovery.jsonl" >/dev/null
+          jq -e 'select(.event == "discovery-complete" and .count == 1)' "$testroot/discovery.jsonl" >/dev/null
+          if "$helper" process "$testroot/missing" "$testroot/out-fail" > "$testroot/error.jsonl" 2> "$testroot/error.txt"; then
+            echo 'Invalid input unexpectedly succeeded' >&2; exit 1
+          fi
+          echo 'Linux helper fixture checks passed.'
+      - name: Install frontend dependencies and build Debian and RPM packages
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          cargo fetch --manifest-path src-tauri/Cargo.toml
+          node tools/bundle-licenses.mjs src-tauri/resources/licenses
+          cp THIRD_PARTY_NOTICES.md src-tauri/resources/THIRD_PARTY_NOTICES.md
+          cp vendor/LibOrbisPkg/LICENSE.txt src-tauri/resources/LibOrbisPkg-LICENSE.txt
+          npm run tauri:build -- --bundles deb,rpm
+      - name: Inspect and install Debian package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts/linux
+          version="$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")"
+          deb_file="$(find src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          rpm_file="$(find src-tauri/target/release/bundle/rpm -maxdepth 1 -type f -name '*.rpm' -print -quit)"
+          test -n "$deb_file" && test -n "$rpm_file"
+          cp "$deb_file" "release-artifacts/linux/FPKG-Builder-${version}-linux-x64.deb"
+          cp "$rpm_file" "release-artifacts/linux/FPKG-Builder-${version}-linux-x64.rpm"
+          dpkg-deb --info release-artifacts/linux/*.deb
+          dpkg-deb --contents release-artifacts/linux/*.deb
+          sudo apt-get install -y ./release-artifacts/linux/*.deb
+          command -v fpkg-builder
+          Xvfb :117 -screen 0 1280x900x24 -nolisten tcp -ac > /tmp/vortex-ubuntu-xvfb.log 2>&1 &
+          xvfb_pid=$!
+          trap 'kill "$xvfb_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do
+            [[ -S /tmp/.X11-unix/X117 ]] && break
+            sleep 0.25
+          done
+          kill -0 "$xvfb_pid"
+          set +e
+          DISPLAY=:117 env -u WAYLAND_DISPLAY -u XAUTHORITY GDK_BACKEND=x11 \
+            LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 \
+            dbus-run-session -- timeout 12s fpkg-builder > /tmp/fpkg-builder-launch.log 2>&1
+          code=$?
+          set -e
+          cat /tmp/vortex-launch.log
+          if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then cat /tmp/vortex-launch.log; exit "$code"; fi
+          rpm -qpl release-artifacts/linux/*.rpm
+          rpm -qp --requires release-artifacts/linux/*.rpm
+      - name: Archive source corresponding to this build
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")"
+          mkdir -p release-artifacts/source
+          stage="$(mktemp -d)"
+          trap 'rm -rf "$stage"' EXIT
+          archive_root="FPKG-Builder-${version}"
+          mkdir -p "$stage/$archive_root"
+          git archive --format=tar HEAD | tar -xf - -C "$stage/$archive_root"
+          mkdir -p "$stage/$archive_root/src-tauri/resources"
+          cp -a src-tauri/resources/licenses "$stage/$archive_root/src-tauri/resources/"
+          cp src-tauri/resources/THIRD_PARTY_NOTICES.md \
+            src-tauri/resources/THIRD_PARTY_DEPENDENCY_LICENSES.md \
+            src-tauri/resources/LibOrbisPkg-LICENSE.txt \
+            "$stage/$archive_root/src-tauri/resources/"
+          (cd "$stage" && zip -qr "$GITHUB_WORKSPACE/release-artifacts/source/FPKG-Builder-${version}-source.zip" "$archive_root")
+          (cd release-artifacts/source && sha256sum *.zip > SHA256SUMS)
+      - name: Upload Linux packages and shared application binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages-and-binary
+          path: |
+            release-artifacts/linux/*
+            release-artifacts/source/*
+            src-tauri/target/release/fpkg-builder
+            src-tauri/resources/engine/**
+            src-tauri/resources/THIRD_PARTY_NOTICES.md
+            src-tauri/resources/LibOrbisPkg-LICENSE.txt
+            src-tauri/resources/licenses/**
+            src-tauri/resources/THIRD_PARTY_DEPENDENCY_LICENSES.md
+
+  fedora-smoke:
+    needs: linux
+    runs-on: ubuntu-24.04
+    container: fedora:latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-packages-and-binary
+          path: /tmp/linux-input
+      - name: Install RPM and smoke-launch the app
+        shell: bash
+        run: |
+          set -euo pipefail
+          rpm_file="$(find /tmp/linux-input -type f -name '*.rpm' -print -quit)"
+          test -n "$rpm_file"
+          dnf -y install gtk3 webkit2gtk4.1 libayatana-appindicator-gtk3 \
+            xorg-x11-server-Xvfb dejavu-sans-fonts dbus-daemon "$rpm_file"
+          rpm -q fpkg-builder
+          command -v fpkg-builder
+          Xvfb :117 -screen 0 1280x900x24 -nolisten tcp -ac > /tmp/vortex-rpm-xvfb.log 2>&1 &
+          xvfb_pid=$!
+          trap 'kill "$xvfb_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do
+            [[ -S /tmp/.X11-unix/X117 ]] && break
+            sleep 0.25
+          done
+          kill -0 "$xvfb_pid"
+          set +e
+          DISPLAY=:117 env -u WAYLAND_DISPLAY -u XAUTHORITY GDK_BACKEND=x11 LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 dbus-run-session -- timeout 12s fpkg-builder > /tmp/fpkg-builder-rpm-launch.log 2>&1
+          code=$?
+          set -e
+          cat /tmp/vortex-rpm-launch.log
+          if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then exit "$code"; fi
+
+  arch:
+    needs: linux
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    steps:
+      - name: Prepare Arch container tools
+        run: pacman -Sy --noconfirm base-devel gtk3 webkit2gtk-4.1 libayatana-appindicator librsvg xorg-server-xvfb ttf-dejavu sudo
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-packages-and-binary
+          path: /tmp/linux-input
+      - name: Create and verify Arch package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/target/release src-tauri/resources release-artifacts/arch
+          cp /tmp/linux-input/src-tauri/target/release/fpkg-builder src-tauri/target/release/
+          # Package the shared frontend binary and self-contained helper produced by the Linux job.
+          cp -a /tmp/linux-input/src-tauri/resources/engine src-tauri/resources/
+          cp -a /tmp/linux-input/src-tauri/resources/licenses src-tauri/resources/
+          cp /tmp/linux-input/src-tauri/resources/THIRD_PARTY_NOTICES.md src-tauri/resources/
+          cp /tmp/linux-input/src-tauri/resources/LibOrbisPkg-LICENSE.txt src-tauri/resources/
+          cp /tmp/linux-input/src-tauri/resources/THIRD_PARTY_DEPENDENCY_LICENSES.md src-tauri/resources/
+          cp packaging/PKGBUILD PKGBUILD
+          useradd --create-home builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          su builder -c "cd '$GITHUB_WORKSPACE' && makepkg --syncdeps --noconfirm --force"
+          install -Dm644 ./*.pkg.tar.zst release-artifacts/arch/
+          pacman -U --noconfirm release-artifacts/arch/*.pkg.tar.zst
+          Xvfb :117 -screen 0 1280x900x24 -nolisten tcp -ac > /tmp/vortex-arch-xvfb.log 2>&1 &
+          xvfb_pid=$!
+          trap 'kill "$xvfb_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do
+            [[ -S /tmp/.X11-unix/X117 ]] && break
+            sleep 0.25
+          done
+          kill -0 "$xvfb_pid"
+          set +e
+          DISPLAY=:117 env -u WAYLAND_DISPLAY -u XAUTHORITY GDK_BACKEND=x11 LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 dbus-run-session -- timeout 12s fpkg-builder > /tmp/fpkg-builder-arch-launch.log 2>&1
+          code=$?
+          set -e
+          cat /tmp/vortex-arch-launch.log
+          if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then exit "$code"; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-package
+          path: release-artifacts/arch/*.pkg.tar.zst

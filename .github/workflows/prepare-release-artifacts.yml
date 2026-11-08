@@ -1,0 +1,47 @@
+name: Prepare release artifacts (no publishing)
+
+on:
+  workflow_dispatch:
+    inputs:
+      linux_run_id:
+        description: Successful Linux packages workflow run ID (also contains the Arch package)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download Linux and Arch workflow artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-packages-and-binary
+          run-id: ${{ inputs.linux_run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: release-artifacts/incoming/linux
+      - name: Download Arch workflow artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: arch-package
+          run-id: ${{ inputs.linux_run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: release-artifacts/incoming/arch
+      - name: Organize and checksum deliverables
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts/final
+          find release-artifacts/incoming -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.pkg.tar.zst' -o -name '*-source.zip' \) -exec cp {} release-artifacts/final/ \;
+          for pattern in '*.deb' '*.rpm' '*.pkg.tar.zst' '*-source.zip'; do
+            compgen -G "release-artifacts/final/$pattern" >/dev/null || { echo "Missing release artifact: $pattern" >&2; exit 1; }
+          done
+          (cd release-artifacts/final && sha256sum * > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-with-checksums
+          path: release-artifacts/final/

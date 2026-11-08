@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=FPKG Builder
+Comment=Build fPKGs from Itemzflow game dumps
+Exec=fpkg-builder
+Icon=fpkg-builder
+Terminal=false
+Type=Application
+Categories=Utility;
