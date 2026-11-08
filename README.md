@@ -22,7 +22,7 @@ FPKG Builder packages target 64-bit x86 Linux systems.
 
 [![Download latest release](https://img.shields.io/github/v/release/rileyadams05/FPKG-Builder?style=for-the-badge&label=Download%20latest%20release)](https://github.com/rileyadams05/FPKG-Builder/releases/latest)
 
-for other distributions is welcome through pull requests,Or making your own repo But Make sure you credit the original developer and me and anyone else that's worked on the project And follow the original licensing See [CONTRIBUTING.md](CONTRIBUTING.md).
+for other distributions is welcome through pull requests Or making your own repo But Make sure you credit the original developer and me and anyone else that's worked on the project And follow the original licensing See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 
 <details>
