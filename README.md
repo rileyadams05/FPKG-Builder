@@ -4,7 +4,7 @@ FPKG Builder is a Linux desktop application for creating PS4 fPKG packages from 
 
 Itemzflow handles the game dump; FPKG Builder handles packaging. Select the Itemzflow folder and the application locates the game data, reuses an existing GP4 project when one is available, or generates one when needed. It then builds the fPKG, reports build progress, checks the completed package, and saves it to your chosen location.
 
-FPKG Builder leaves the Itemzflow folder and its contents in place. This includes GP4 files, logs, and `.complete` marker files when they are present. Those marker files are Completely optional. You can delete them or you can leave them. Our app will ignore them
+FPKG Builder leaves the Itemzflow folder and its contents in place. This includes GP4 files, logs, and `.complete` marker files when they are present. The builder ignores the marker files and leaves them untouched; they can be present or absent.
 
 ## Package support
 
@@ -34,13 +34,13 @@ FPKG Builder is built for 64-bit x86 Linux systems.
 | Arch Linux and Manjaro | `.pkg.tar.zst` | x86-64 |
 | Fedora and compatible RPM-based distributions | `.rpm` | x86-64 |
 
+Installers are available from the [FPKG Builder Releases page](https://github.com/rileyadams05/FPKG-Builder/releases). Each release page includes its installation and usage instructions.
 
-## Releases
-
-Installers and release-specific installation and usage instructions are available on the [FPKG Builder GitHub Releases page](https://github.com/rileyadams05/FPKG-Builder/releases).
-
-## Credits and licensing
+<details>
+<summary>Credits and licensing</summary>
 
 FPKG Builder uses and modifies [LibOrbisPkg](https://github.com/maxton/LibOrbisPkg), created by maxton. LibOrbisPkg is licensed under LGPL-3.0. Its licence and applicable third-party notices are included in this repository.
 
 [Itemzflow](https://github.com/LightningMods/Itemzflow), developed by LightningMods, provides the game-dumping workflow that FPKG Builder is designed to package.
+
+</details>
