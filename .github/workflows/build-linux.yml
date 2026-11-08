@@ -43,16 +43,18 @@ jobs:
           set -euo pipefail
           helper="$PWD/src-tauri/resources/engine/vortex-engine"
           testroot="$(mktemp -d)"
-          "$helper" fixture "$testroot/generated"
-          truncate -s 33554432 "$testroot/generated/content.bin"
-          "$helper" process "$testroot/generated" "$testroot/out-generated" > "$testroot/generated.jsonl"
+          mkdir -p "$testroot/generated/Itemzflow"
+          "$helper" fixture "$testroot/generated/Itemzflow/CUSA00001"
+          truncate -s 33554432 "$testroot/generated/Itemzflow/CUSA00001/content.bin"
+          "$helper" process "$testroot/generated/Itemzflow" "$testroot/out-generated" > "$testroot/generated.jsonl"
           jq -e 'select(.event == "gp4-ready" and .mode == "generated")' "$testroot/generated.jsonl" >/dev/null
           jq -e 'select(.event == "completed" and .validation == "passed")' "$testroot/generated.jsonl" >/dev/null
           jq -e 'select(.event == "build-progress" and .bytesTotal != null and .bytesProcessed >= 0)' "$testroot/generated.jsonl" >/dev/null
-          test ! -e "$testroot/generated/CUSA00001.gp4"
-          "$helper" fixture "$testroot/reused"
-          "$helper" gp4 "$testroot/reused" "$testroot/reused/CUSA00001.gp4"
-          python3 - "$testroot/reused/CUSA00001.gp4" <<'PY'
+          test ! -e "$testroot/generated/Itemzflow/CUSA00001/CUSA00001.gp4"
+          mkdir -p "$testroot/reused/Itemzflow"
+          "$helper" fixture "$testroot/reused/Itemzflow/CUSA00001"
+          "$helper" gp4 "$testroot/reused/Itemzflow/CUSA00001" "$testroot/reused/Itemzflow/CUSA00001/CUSA00001.gp4"
+          python3 - "$testroot/reused/Itemzflow/CUSA00001/CUSA00001.gp4" <<'PY'
           import sys
           import xml.etree.ElementTree as ET
           path = sys.argv[1]
@@ -62,15 +64,32 @@ jobs:
               entry.set('orig_path', '/mnt/usb0/CUSA00001/' + target)
           project.write(path, encoding='utf-8', xml_declaration=True)
           PY
-          gp4_hash="$(sha256sum "$testroot/reused/CUSA00001.gp4" | cut -d' ' -f1)"
-          "$helper" process "$testroot/reused" "$testroot/out-reused" > "$testroot/reused.jsonl"
+          gp4_hash="$(sha256sum "$testroot/reused/Itemzflow/CUSA00001/CUSA00001.gp4" | cut -d' ' -f1)"
+          "$helper" process "$testroot/reused/Itemzflow" "$testroot/out-reused" > "$testroot/reused.jsonl"
           jq -e 'select(.event == "gp4-ready" and .mode == "reused")' "$testroot/reused.jsonl" >/dev/null
           jq -e 'select(.event == "completed" and .validation == "passed")' "$testroot/reused.jsonl" >/dev/null
-          test "$gp4_hash" = "$(sha256sum "$testroot/reused/CUSA00001.gp4" | cut -d' ' -f1)"
-          "$helper" process "$testroot/reused/CUSA00001.gp4" "$testroot/out-direct-gp4" > "$testroot/direct-gp4.jsonl"
-          jq -e 'select(.event == "gp4-ready" and .mode == "reused")' "$testroot/direct-gp4.jsonl" >/dev/null
-          jq -e 'select(.event == "completed" and .validation == "passed")' "$testroot/direct-gp4.jsonl" >/dev/null
-          test "$gp4_hash" = "$(sha256sum "$testroot/reused/CUSA00001.gp4" | cut -d' ' -f1)"
+          test "$gp4_hash" = "$(sha256sum "$testroot/reused/Itemzflow/CUSA00001/CUSA00001.gp4" | cut -d' ' -f1)"
+          mkdir -p "$testroot/merged/Itemzflow/CUSA00001" "$testroot/merged/Itemzflow/CUSA00001-patch" "$testroot/merged/Itemzflow/CUSA00001-dlc"
+          "$helper" fixture "$testroot/merged/Itemzflow/CUSA00001"
+          "$helper" fixture "$testroot/merged/Itemzflow/CUSA00001-patch"
+          "$helper" fixture "$testroot/merged/Itemzflow/CUSA00001-dlc"
+          printf 'updated eboot data\n' > "$testroot/merged/Itemzflow/CUSA00001-patch/eboot.bin"
+          printf 'patch-only data\n' > "$testroot/merged/Itemzflow/CUSA00001-patch/update-content.dat"
+          : > "$testroot/merged/Itemzflow/CUSA00001.complete"
+          printf 'ignored Itemzflow log\n' > "$testroot/merged/Itemzflow/daemon.log"
+          "$helper" gp4 "$testroot/merged/Itemzflow/CUSA00001" "$testroot/merged/Itemzflow/CUSA00001/CUSA00001.gp4"
+          "$helper" gp4 "$testroot/merged/Itemzflow/CUSA00001-patch" "$testroot/merged/Itemzflow/CUSA00001-patch/CUSA00001.gp4"
+          sed -i 's/pkg_ps4_app/pkg_ps4_patch/' "$testroot/merged/Itemzflow/CUSA00001-patch/CUSA00001.gp4"
+          base_gp4_hash="$(sha256sum "$testroot/merged/Itemzflow/CUSA00001/CUSA00001.gp4" | cut -d' ' -f1)"
+          patch_gp4_hash="$(sha256sum "$testroot/merged/Itemzflow/CUSA00001-patch/CUSA00001.gp4" | cut -d' ' -f1)"
+          "$helper" process "$testroot/merged/Itemzflow" "$testroot/out-merged" > "$testroot/merged.jsonl"
+          jq -e 'select(.event == "update-merged")' "$testroot/merged.jsonl" >/dev/null
+          jq -e 'select(.event == "completed" and .validation == "passed")' "$testroot/merged.jsonl" >/dev/null
+          test "$(find "$testroot/out-merged" -maxdepth 1 -type f -name '*.pkg' | wc -l)" -eq 1
+          test "$base_gp4_hash" = "$(sha256sum "$testroot/merged/Itemzflow/CUSA00001/CUSA00001.gp4" | cut -d' ' -f1)"
+          test "$patch_gp4_hash" = "$(sha256sum "$testroot/merged/Itemzflow/CUSA00001-patch/CUSA00001.gp4" | cut -d' ' -f1)"
+          test -f "$testroot/merged/Itemzflow/CUSA00001.complete"
+          test -f "$testroot/merged/Itemzflow/daemon.log"
           mkdir -p "$testroot/itemzflow"
           "$helper" fixture "$testroot/itemzflow/CUSA00001"
           "$helper" gp4 "$testroot/itemzflow/CUSA00001" "$testroot/itemzflow/CUSA00001/CUSA00001.gp4"

@@ -1,5 +1,14 @@
 # Test and verification record
 
+## Current drag-and-drop workflow changes (8 November 2026)
+
+- `npm test` passed (2 tests); `npm run build` completed.
+- The .NET 8 helper built with zero warnings and errors.
+- A synthetic Itemzflow folder containing an existing base GP4, matching `pkg_ps4_patch` GP4, a DLC-named folder, a `.complete` marker, and a log produced exactly one `.pkg`. LibOrbisPkg validation passed. Both GP4s, marker and log remained in the source tree.
+- A synthetic base-only Itemzflow folder with no GP4 and no `.complete` marker produced exactly one validated `.pkg`; GP4 generation was in memory and no GP4 was written to the dump.
+- `cargo fmt --check` passes. A native Tauri compile could not be run in this Windows session because Rust's MSVC target cannot find `link.exe`; WSL reports `Wsl/E_ACCESSDENIED`. Therefore the updated native bridge and Linux installer have not yet been compiled in this turn.
+- The Linux and console test results below describe the previously packaged v0.1.0 build, whose interface predates the current drag-and-drop and merged-update changes. They are not verification of this updated application build.
+
 ## Verified in Linux environments
 
 - Repaired the existing Ubuntu 24.04 WSL distro, converted it from WSL 1 to WSL 2, and verified systemd and the Linux toolchain start.

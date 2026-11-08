@@ -104,85 +104,154 @@ static int ProcessInput(string inputPath, string outputFolder)
 {
     var timer = Stopwatch.StartNew();
     var input = Path.GetFullPath(inputPath);
-    if (input.EndsWith(".pkg", StringComparison.OrdinalIgnoreCase))
-        return Fail("This application expects an Itemzflow dump folder or a GP4 project. Existing PKG files are not accepted as input.");
+    if (!Directory.Exists(input)) return Fail($"Drop the Itemzflow folder that contains your game dump folders: {input}");
+    if (!string.Equals(Path.GetFileName(Path.TrimEndingDirectorySeparator(input)), "Itemzflow", StringComparison.OrdinalIgnoreCase))
+        return Fail("Drop the complete folder named Itemzflow. It should contain the CUSA game folder and, when present, its matching -patch folder.");
 
-    Gp4Project project;
-    string projectDirectory;
-    DumpMetadata metadata;
-    if (File.Exists(input) && Path.GetExtension(input).Equals(".gp4", StringComparison.OrdinalIgnoreCase))
+    try
     {
-        EmitEvent(new { @event = "input-accepted", inputType = "gp4", inputPath = input });
-        projectDirectory = Path.GetDirectoryName(input)!;
+        var games = Directory.EnumerateDirectories(input, "*", SearchOption.TopDirectoryOnly)
+            .Where(path => (File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0 && HasSfo(path))
+            .ToList();
+        var baseFolders = games.Where(path => !Path.GetFileName(path).EndsWith("-patch", StringComparison.OrdinalIgnoreCase)
+            && !Path.GetFileName(path).Contains("-dlc", StringComparison.OrdinalIgnoreCase)
+            && !IsDlcDumpFolder(path)).ToList();
+        if (baseFolders.Count != 1)
+            throw new InvalidDataException(baseFolders.Count == 0
+                ? "No base-game folder was found inside Itemzflow. The folder must contain sce_sys/param.sfo."
+                : "More than one base-game folder was found. Put one game's files in the Itemzflow folder at a time.");
+
+        var baseFolder = baseFolders[0];
+        var metadata = ReadDumpMetadata(baseFolder);
+        if (!Path.GetFileName(baseFolder).Equals(metadata.TitleId, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("The base-game folder name must match its TITLE_ID (for example, CUSA12345).");
+        var patchPath = Path.Combine(input, metadata.TitleId + "-patch");
+        if (Directory.Exists(patchPath) && !HasSfo(patchPath))
+            throw new InvalidDataException($"The matching update folder '{Path.GetFileName(patchPath)}' is present but does not contain sce_sys/param.sfo.");
+        var patchFolder = games.SingleOrDefault(path =>
+            Path.GetFileName(path).Equals(metadata.TitleId + "-patch", StringComparison.OrdinalIgnoreCase));
+        var unrelated = games.Where(path => !string.Equals(path, baseFolder, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(path, patchFolder, StringComparison.OrdinalIgnoreCase)
+            && !Path.GetFileName(path).Contains("-dlc", StringComparison.OrdinalIgnoreCase)
+            && !IsDlcDumpFolder(path)).ToList();
+        if (unrelated.Count > 0)
+            throw new InvalidDataException("Itemzflow contains another game or an unrecognized dump folder. Keep only the selected base game and its matching -patch folder together.");
+
+        EmitEvent(new { @event = "input-accepted", inputType = patchFolder is null ? "base-game" : "base-game-and-update", inputPath = input, titleId = metadata.TitleId, title = metadata.Title });
+        var project = LoadOrGenerateDumpProject(baseFolder, input, metadata, true, out var baseGp4Mode);
+        EmitEvent(new { @event = "gp4-ready", mode = baseGp4Mode, titleId = metadata.TitleId });
+        if (patchFolder is not null)
+        {
+            var patchMetadata = ReadDumpMetadata(patchFolder);
+            if (!string.Equals(metadata.TitleId, patchMetadata.TitleId, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("The update folder does not match the base game's title ID.");
+            MergePatchProject(project, input, patchFolder, patchMetadata);
+            EmitEvent(new { @event = "update-merged", titleId = metadata.TitleId });
+        }
+        var validation = Gp4Validator.ValidateProject(project, input);
+        foreach (var issue in validation) Console.Error.WriteLine($"{issue.Type}: {issue.Message}");
+        if (validation.Any(x => x.Type == ValidateResult.ResultType.Fatal))
+            throw new InvalidDataException("The combined base-game/update project did not pass LibOrbisPkg validation.");
+
+        return BuildProject(project, input, outputFolder, structuredProgress: true, metadata: metadata, jobTimer: timer);
+    }
+    catch (Exception ex) { return Fail(ex.Message); }
+}
+
+static Gp4Project LoadOrGenerateDumpProject(string dumpFolder, string projectRoot, DumpMetadata metadata, bool isBaseGame, out string mode)
+{
+    var existing = FindExistingGp4(dumpFolder, metadata.TitleId, metadata.ContentId)
+        ?? FindMatchingContainerGp4(projectRoot, metadata.TitleId, metadata.ContentId);
+    if (existing is not null)
+    {
         try
         {
-            using var stream = File.OpenRead(input);
-            project = Gp4Project.ReadFrom(stream);
-            var resolved = LoadAndResolveProject(input, projectDirectory);
-            project = resolved.Project;
-            projectDirectory = resolved.ProjectDirectory;
-            metadata = ReadProjectMetadata(project, projectDirectory);
-            ValidateProjectOrThrow(project, projectDirectory);
-            EmitEvent(new { @event = "gp4-ready", mode = "reused", gp4Path = input, titleId = metadata.TitleId });
-        }
-        catch (Exception ex) { return Fail($"The selected GP4 could not be used: {ex.Message}"); }
-    }
-    else if (Directory.Exists(input))
-    {
-        EmitEvent(new { @event = "input-accepted", inputType = "dump-folder", inputPath = input });
-        try { metadata = ReadDumpMetadata(input); }
-        catch (Exception ex) { return Fail($"The selected folder is not a usable Itemzflow game dump: {ex.Message}"); }
-
-        string? existing;
-        try { existing = FindExistingGp4(input, metadata.TitleId, metadata.ContentId); }
-        catch (Exception ex) { return Fail(ex.Message); }
-
-        if (existing is not null)
-        {
-            try
+            var resolved = LoadAndResolveProject(existing, dumpFolder);
+            var projectMetadata = ReadProjectMetadata(resolved.Project, resolved.ProjectDirectory);
+            if (!string.Equals(projectMetadata.TitleId, metadata.TitleId, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(projectMetadata.ContentId, metadata.ContentId, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("The GP4 project metadata does not match the selected Itemzflow dump.");
+            var usableType = isBaseGame
+                ? resolved.Project.volume.Type == VolumeType.pkg_ps4_app
+                : resolved.Project.volume.Type is VolumeType.pkg_ps4_patch or VolumeType.pkg_ps4_app;
+            var validProject = true;
+            if (isBaseGame)
             {
-                var resolved = LoadAndResolveProject(existing, input);
                 var issues = Gp4Validator.ValidateProject(resolved.Project, resolved.ProjectDirectory);
-                foreach (var issue in issues.Where(x => x.Type == ValidateResult.ResultType.Fatal))
-                    Console.Error.WriteLine($"{issue.Type}: {issue.Message}");
-                if (issues.Any(x => x.Type == ValidateResult.ResultType.Fatal))
-                    throw new InvalidDataException("Existing GP4 failed validation; a replacement project will be generated in memory and the original will be left untouched.");
-                project = resolved.Project;
-                projectDirectory = resolved.ProjectDirectory;
-                EmitEvent(new { @event = "gp4-ready", mode = "reused", gp4Path = existing, titleId = metadata.TitleId });
+                validProject = !issues.Any(x => x.Type == ValidateResult.ResultType.Fatal);
             }
-            catch (Exception ex)
+            else
             {
-                Console.Error.WriteLine($"Existing GP4 not used: {ex.Message}");
-                EmitEvent(new { @event = "gp4-ready", mode = "generated", note = "Existing GP4 was unusable and has been preserved.", titleId = metadata.TitleId });
-                try { (project, _, _) = CreateGp4Project(input); }
-                catch (Exception generationError) { return Fail($"Could not generate a replacement GP4 in memory: {generationError.Message}"); }
-                projectDirectory = input;
+                // Patch projects are inputs to a merged app, not standalone build targets.
+                validProject = resolved.Project.files.Items.Count > 0;
             }
+            if (validProject && usableType)
+            {
+                mode = "reused";
+                return RebaseProjectFiles(resolved.Project, projectRoot, dumpFolder, resolved.ProjectDirectory);
+            }
+            Console.Error.WriteLine($"Existing GP4 was not suitable and remains untouched: {existing}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Existing GP4 could not be used and remains untouched ({existing}): {ex.Message}");
+        }
+    }
+    mode = "generated";
+    var (generated, _, _) = CreateGp4Project(dumpFolder);
+    return RebaseProjectFiles(generated, projectRoot, dumpFolder, dumpFolder);
+}
+
+static Gp4Project RebaseProjectFiles(Gp4Project project, string projectRoot, string sourceFolder, string projectDirectory)
+{
+    foreach (var file in project.files.Items)
+    {
+        var target = NormalizeGp4RelativePath(file.TargetPath, "target path");
+        var original = Path.GetFullPath(Path.Combine(projectDirectory, (file.OrigPath ?? target).Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar)));
+        if (!IsWithin(sourceFolder, original) || !File.Exists(original))
+            original = Path.GetFullPath(Path.Combine(sourceFolder, target.Replace('/', Path.DirectorySeparatorChar)));
+        if (!IsWithin(sourceFolder, original) || !File.Exists(original))
+            throw new FileNotFoundException($"A GP4 source file is missing: {target}");
+        file.OrigPath = Path.GetRelativePath(projectRoot, original).Replace('\\', '/');
+    }
+    return project;
+}
+
+static void MergePatchProject(Gp4Project baseProject, string projectRoot, string patchFolder, DumpMetadata patchMetadata)
+{
+    var patch = LoadOrGenerateDumpProject(patchFolder, projectRoot, patchMetadata, false, out _);
+    var filesByTarget = baseProject.files.Items.ToDictionary(x => NormalizeGp4RelativePath(x.TargetPath, "target path"), StringComparer.OrdinalIgnoreCase);
+    foreach (var file in patch.files.Items)
+    {
+        var target = NormalizeGp4RelativePath(file.TargetPath, "update target path");
+        // The base app's param.sfo identifies the resulting app package. The update's
+        // SFO identifies a patch package and must not replace it in a merged app PKG.
+        if (target.Equals("sce_sys/param.sfo", StringComparison.OrdinalIgnoreCase)) continue;
+        var source = Path.GetFullPath(Path.Combine(projectRoot, (file.OrigPath ?? target).Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar)));
+        if (!IsWithin(patchFolder, source) || !File.Exists(source))
+            throw new FileNotFoundException($"An update GP4 source file is missing: {target}");
+        var mergedFile = new Gp4File { TargetPath = target, OrigPath = Path.GetRelativePath(projectRoot, source).Replace('\\', '/') };
+        if (filesByTarget.TryGetValue(target, out var replaced))
+        {
+            var index = baseProject.files.Items.IndexOf(replaced);
+            baseProject.files.Items[index] = mergedFile;
+            filesByTarget[target] = mergedFile;
         }
         else
         {
-            EmitEvent(new { @event = "gp4-ready", mode = "generated", titleId = metadata.TitleId });
-            try { (project, _, _) = CreateGp4Project(input); }
-            catch (Exception ex) { return Fail($"Could not generate a GP4 in memory: {ex.Message}"); }
-            projectDirectory = input;
+            baseProject.files.Items.Add(mergedFile);
+            filesByTarget.Add(target, mergedFile);
         }
+        AddTargetDirectories(baseProject, target);
     }
-    else
-    {
-        return Fail($"Input path does not exist or is unsupported: {input}");
-    }
-
-    return BuildProject(project, projectDirectory, outputFolder, structuredProgress: true, metadata: metadata, jobTimer: timer);
 }
 
-static void ValidateProjectOrThrow(Gp4Project project, string projectDirectory)
+static void AddTargetDirectories(Gp4Project project, string target)
 {
-    var issues = Gp4Validator.ValidateProject(project, projectDirectory);
-    foreach (var issue in issues.Where(x => x.Type == ValidateResult.ResultType.Fatal))
-        Console.Error.WriteLine($"{issue.Type}: {issue.Message}");
-    if (issues.Any(x => x.Type == ValidateResult.ResultType.Fatal))
-        throw new InvalidDataException("GP4 validation failed. Check that the referenced files are present and accessible.");
+    var parent = Path.GetDirectoryName(target)?.Replace('\\', '/');
+    if (string.IsNullOrEmpty(parent)) return;
+    Dir? directory = null;
+    foreach (var segment in parent.Split('/')) directory = project.AddDir(directory, segment);
 }
 
 static DumpMetadata ReadProjectMetadata(Gp4Project project, string projectDirectory)
@@ -457,6 +526,16 @@ static IEnumerable<string> FindDumpFolders(string selectedRoot)
 
 static bool HasSfo(string folder) => File.Exists(Path.Combine(folder, "sce_sys", "param.sfo"));
 
+static bool IsDlcDumpFolder(string folder)
+{
+    try
+    {
+        using var stream = File.OpenRead(Path.Combine(folder, "sce_sys", "param.sfo"));
+        return string.Equals(ParamSfo.FromStream(stream)["CATEGORY"]?.ToString(), "ac", StringComparison.OrdinalIgnoreCase);
+    }
+    catch { return false; }
+}
+
 static DumpMetadata ReadDumpMetadata(string folder)
 {
     var sfoPath = Path.Combine(folder, "sce_sys", "param.sfo");
@@ -483,6 +562,19 @@ static string? FindExistingGp4(string folder, string titleId, string contentId)
     if (projects.Count == 1) return projects[0];
     if (projects.Count > 1) throw new InvalidDataException("Multiple GP4 projects were found; select the intended project explicitly.");
     return null;
+}
+
+static string? FindMatchingContainerGp4(string container, string titleId, string contentId)
+{
+    var matches = Directory.EnumerateFiles(container, "*.gp4", SearchOption.TopDirectoryOnly)
+        .Where(path => Path.GetFileNameWithoutExtension(path).Equals(titleId, StringComparison.OrdinalIgnoreCase) ||
+                       Path.GetFileNameWithoutExtension(path).Equals(contentId, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    if (matches.Count > 1)
+        throw new InvalidDataException("Multiple GP4 projects matching this game were found in the selected Itemzflow folder.");
+    return matches.SingleOrDefault();
 }
 
 static (Gp4Project Project, string ProjectDirectory) LoadAndResolveProject(string gp4Path, string dumpRoot)

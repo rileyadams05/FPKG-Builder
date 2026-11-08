@@ -8,9 +8,9 @@ Download the `.deb` for your architecture from GitHub Releases, then install it 
 sudo apt install ./FPKG-Builder-0.1.0-linux-x64.deb
 ```
 
-Launch **FPKG Builder** from the desktop menu as the ordinary user. Choose an output directory before selecting a dump, or use the default application-data `fPKGs` folder. Do not run the application with `sudo`.
+Launch **FPKG Builder** from the desktop menu as the ordinary user. Do not run the application with `sudo`.
 
-Mount the storage containing the Itemzflow dump in Linux first. FPKG Builder cannot mount Orbis filesystems and uses `Dumper_Path` only when that configured path is actually accessible from Linux. If discovery does not find the dump, select the directory containing `sce_sys/param.sfo` or enter its Linux path. A valid existing Itemzflow GP4 is reused; otherwise a GP4 is generated in memory. Begin with a base-game dump. Patch and DLC support is unverified.
+Mount the storage containing the dump in Linux first. FPKG Builder cannot mount Orbis filesystems; an Orbis `Dumper_Path` is not automatically a Linux mount path. Put one game's base folder and its matching `<TITLE_ID>-patch` folder, if present, inside a folder named `Itemzflow`. Drop that entire `Itemzflow` folder onto the application. The builder reuses Itemzflow GP4 projects when possible, otherwise prepares the GP4 data in memory, and combines the base game and matching update into one `.pkg`. It ignores optional `.complete` marker files and logs, whether present or absent, and leaves the dump contents in place. Once validation finishes, choose where to save the package. This application does not process DLC or install the fPKG on the console.
 
 ## Other Linux distributions
 

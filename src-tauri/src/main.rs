@@ -36,92 +36,44 @@ fn helper_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("Could not locate the bundled packaging engine: {e}"))
 }
 
-fn emit_line(app: &tauri::AppHandle, line: &str) {
-    if let Ok(value) = serde_json::from_str::<Value>(line) {
-        let _ = app.emit("builder-event", value);
-    }
-}
-
-#[tauri::command]
-fn get_default_output(app: tauri::AppHandle) -> Result<String, String> {
-    let mut path = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    path.push("fPKGs");
-    std::fs::create_dir_all(&path)
-        .map_err(|e| format!("Could not prepare the default output folder: {e}"))?;
-    Ok(path.to_string_lossy().into_owned())
-}
-
-#[tauri::command]
-fn discover_dumps(app: tauri::AppHandle, settings_path: Option<String>) -> Result<(), String> {
-    let helper = helper_path(&app)?;
-    let mut command = Command::new(helper);
-    command
-        .arg("discover")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if let Some(path) = settings_path.filter(|s| !s.trim().is_empty()) {
-        command.arg(path);
-    }
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("Could not start the packaging engine: {e}"))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or("Could not read dump discovery results")?;
-    let stderr = child.stderr.take();
-    let err_thread = stderr.map(|s| {
-        thread::spawn(move || {
-            let mut text = String::new();
-            let _ = BufReader::new(s).read_to_string(&mut text);
-            text
-        })
-    });
-    for line in BufReader::new(stdout).lines().flatten() {
-        emit_line(&app, &line);
-    }
-    let status = child.wait().map_err(|e| e.to_string())?;
-    let details = err_thread.and_then(|h| h.join().ok()).unwrap_or_default();
-    if !status.success() {
-        return Err(if details.trim().is_empty() {
-            format!("Dump discovery exited with {status}.")
-        } else {
-            details
-        });
-    }
-    Ok(())
-}
-
 #[tauri::command]
 fn start_build(
     app: tauri::AppHandle,
     state: State<'_, BuildState>,
     input_path: String,
-    output_folder: String,
 ) -> Result<(), String> {
     let input = input_path.trim().to_owned();
-    let output = output_folder.trim().to_owned();
-    if input.is_empty() || output.is_empty() {
-        return Err("Choose a game dump and output folder first.".into());
+    if input.is_empty() {
+        return Err("Drop the complete Itemzflow folder first.".into());
     }
+    let helper = match helper_path(&app) {
+        Ok(path) => path,
+        Err(error) => return Err(error),
+    };
+    let input_path = PathBuf::from(&input);
+    let parent = input_path.parent().ok_or_else(|| {
+        "Could not determine the Itemzflow folder's parent directory.".to_string()
+    })?;
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let staging = parent.join(format!(".fpkg-builder-staging-{nonce}"));
+    std::fs::create_dir(&staging)
+        .map_err(|e| format!("Could not prepare temporary package storage: {e}"))?;
     if state
         .0
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
         .is_err()
     {
+        let _ = std::fs::remove_dir_all(&staging);
         return Err("A package build is already running.".into());
     }
-    let helper = match helper_path(&app) {
-        Ok(path) => path,
-        Err(error) => {
-            state.0.store(false, Ordering::Release);
-            return Err(error);
-        }
-    };
     let busy = Arc::clone(&state.0);
     thread::spawn(move || {
-        let outcome = run_build(&app, &helper, &input, &output);
+        let outcome = run_build(&app, &helper, &input, &staging);
         if let Err((message, details)) = outcome {
+            let _ = std::fs::remove_dir_all(&staging);
             let _ = app.emit("builder-error", BuildError { message, details });
         }
         busy.store(false, Ordering::Release);
@@ -133,12 +85,12 @@ fn run_build(
     app: &tauri::AppHandle,
     helper: &Path,
     input: &str,
-    output: &str,
+    staging: &Path,
 ) -> Result<(), (String, String)> {
     let mut child = Command::new(helper)
         .arg("process")
         .arg(input)
-        .arg(output)
+        .arg(staging)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -219,7 +171,96 @@ fn run_build(
         return Err((message, details));
     }
     if let Some(completion) = completion {
-        let _ = app.emit("builder-event", completion);
+        let _ = app.emit(
+            "builder-ready-to-save",
+            serde_json::json!({
+                "completion": completion,
+                "stagingDirectory": staging.to_string_lossy()
+            }),
+        );
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn finalize_package(
+    app: tauri::AppHandle,
+    staged_path: String,
+    destination_path: String,
+    completion: Value,
+) -> Result<(), String> {
+    let staged = PathBuf::from(&staged_path)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let stage_dir = staged
+        .parent()
+        .ok_or("Staged package has no parent directory")?;
+    if !stage_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with(".fpkg-builder-staging-"))
+    {
+        return Err("The temporary package path is invalid.".into());
+    }
+    let destination = PathBuf::from(destination_path);
+    if destination
+        .extension()
+        .and_then(|x| x.to_str())
+        .map_or(true, |ext| !ext.eq_ignore_ascii_case("pkg"))
+    {
+        return Err("Choose a destination filename ending in .pkg.".into());
+    }
+    if destination.exists() {
+        return Err("A file already exists at that location. Choose a different filename.".into());
+    }
+    let parent = destination
+        .parent()
+        .ok_or("The selected destination has no parent folder")?;
+    std::fs::create_dir_all(parent)
+        .map_err(|e| format!("Could not access the selected destination: {e}"))?;
+    let partial = destination.with_file_name(format!(
+        ".{}.partial",
+        destination.file_name().unwrap().to_string_lossy()
+    ));
+    let copy_result = (|| -> std::io::Result<()> {
+        let mut source = std::fs::File::open(&staged)?;
+        let mut target = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&partial)?;
+        std::io::copy(&mut source, &mut target)?;
+        target.sync_all()?;
+        std::fs::rename(&partial, &destination)?;
+        Ok(())
+    })();
+    if let Err(error) = copy_result {
+        let _ = std::fs::remove_file(&partial);
+        return Err(format!("Could not save the validated package: {error}"));
+    }
+    let _ = std::fs::remove_dir_all(stage_dir);
+    let mut result = completion;
+    result["packagePath"] = Value::String(destination.to_string_lossy().into_owned());
+    result["outputFolder"] = Value::String(parent.to_string_lossy().into_owned());
+    result["packageBytes"] = Value::from(
+        std::fs::metadata(&destination)
+            .map_err(|e| e.to_string())?
+            .len(),
+    );
+    app.emit("builder-event", result).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn discard_staged_package(staging_directory: String) -> Result<(), String> {
+    let staging = PathBuf::from(staging_directory);
+    if !staging
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with(".fpkg-builder-staging-"))
+    {
+        return Err("The temporary package path is invalid.".into());
+    }
+    if staging.exists() {
+        std::fs::remove_dir_all(staging).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -229,9 +270,9 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .manage(BuildState(Arc::new(AtomicBool::new(false))))
         .invoke_handler(tauri::generate_handler![
-            get_default_output,
-            discover_dumps,
-            start_build
+            start_build,
+            finalize_package,
+            discard_staged_package
         ])
         .run(tauri::generate_context!())
         .expect("error while running FPKG Builder");

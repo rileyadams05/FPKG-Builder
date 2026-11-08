@@ -2,13 +2,13 @@
 
 FPKG Builder is a Linux desktop application for creating PS4 fPKG packages from game dumps made with Itemzflow. It is designed to run on the PS4 itself, so you can finish packaging there without transferring a large game dump to a separate Windows PC.
 
-Itemzflow handles the game dump; FPKG Builder handles packaging. Select the Itemzflow folder and the application locates the game data, reuses an existing GP4 project when one is available, or generates one when needed. It then builds the fPKG, reports build progress, checks the completed package, and saves it to your chosen location.
+Itemzflow handles the game dump; FPKG Builder handles packaging. Drop the complete `Itemzflow` folder containing one game's base dump and, if available, its matching `-patch` update. FPKG Builder reuses Itemzflow's GP4 projects when possible, prepares a project when needed, combines the base game and update into one fPKG, reports build progress, validates the package, and then asks where to save the finished `.pkg` file.
 
 FPKG Builder leaves the Itemzflow folder and its contents in place. This includes GP4 files, logs, and `.complete` marker files when they are present. The builder ignores the marker files and leaves them untouched; they can be present or absent.
 
 ## Package support
 
-FPKG Builder supports base-game and game-update dumps. DLC is handled separately: an Itemzflow-generated DLC folder is packaged as its own content and requires separate signing. DLC is not combined with the base-game or update package.
+FPKG Builder handles base-game dumps and their matching game updates in a single package. This application does not process DLC.
 
 The finished fPKG is saved for use with your existing PS4 package-installation method. FPKG Builder does not install packages on the console, dump games, install Linux, or jailbreak a PS4.
 
