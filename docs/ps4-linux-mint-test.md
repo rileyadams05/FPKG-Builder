@@ -4,7 +4,7 @@ This checklist records the first on-console test for the Linux x86-64 `.deb`. Pa
 
 ## Install and launch
 
-1. Download the FPKG Builder `.deb` release asset on Linux Mint. A matching official FPKG Builder release has not yet been published; any legacy pre-rename package is not a substitute for a verified FPKG Builder build.
+1. Download the `FPKG-Builder-0.1.0-linux-x64.deb` asset from the [v0.1.0 GitHub Release](https://github.com/rileyadams05/FPKG-Builder/releases/tag/v0.1.0). This package passed automated Linux smoke checks, but PS4 hardware testing is still pending.
 2. Confirm the system is x86-64 and identify the Mint release:
 
    ```sh

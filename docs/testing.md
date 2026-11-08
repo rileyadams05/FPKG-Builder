@@ -24,7 +24,7 @@ The Tauri build exposed and fixed two Linux issues: resource directories now use
 
 ## Not verified
 
-- All nine Bash `run` blocks in the GitHub Actions workflows pass `bash -n`. The Actions jobs themselves have not been dispatched; this workspace has no `.git` directory or configured remote, and no GP4 Builder repository is connected for dispatch.
+- GitHub Actions run [42450558333](https://github.com/rileyadams05/FPKG-Builder/actions/runs/42450558333) passed the Linux build and `.deb` install/launch check, the Fedora RPM smoke check, and the Arch package build/install/launch check. It also ran GP4 reuse, generation, package build, progress, and validation fixtures.
 - The native GTK folder picker opened and selected a synthetic dump under Xvfb; that selection triggered a package build and validation through the packaged GUI. OS-level drag-and-drop was not exercised. GUI tests ran under Xvfb, not in a full Mint/XFCE desktop session.
 - Linux Mint 22.3 XFCE on the PS4 has not been tested. The console and real dump are not available in this environment.
 - No real Itemzflow dump has been packaged. The package fixtures use synthetic data.

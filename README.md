@@ -23,7 +23,7 @@ The source dump and an existing GP4 are left unchanged. Game files are processed
 
 The initial compatibility target is **base-game dumps**. Patch and DLC compatibility has not been verified. This is version **0.1.0**, an early testing version. Synthetic fixtures, the packaged Linux application and Linux package formats have been exercised in controlled environments. Testing on PS4 hardware with a real Itemzflow dump is still pending.
 
-The local project contains verified Linux `.deb`, `.rpm`, and `.pkg.tar.zst` installers under `release-artifacts`, but these build artifacts are excluded from this source repository. No GitHub Release has been published for this repository yet. Public distribution will be a separate step after release approval. Windows packaging is outside the current scope.
+The Linux `.deb`, `.rpm`, and `.pkg.tar.zst` installers are available from the [GitHub Releases page](https://github.com/rileyadams05/FPKG-Builder/releases). The v0.1.0 packages passed automated Linux, Fedora, and Arch build and smoke checks. Testing on PS4 Linux Mint with a real Itemzflow dump remains pending. Windows packaging is outside the current scope.
 
 ## Linux packages
 

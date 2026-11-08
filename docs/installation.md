@@ -1,8 +1,8 @@
 # Installation and development
 
-FPKG Builder targets x86-64 Linux. The release formats are Debian `.deb`, Arch `.pkg.tar.zst`, and RPM `.rpm`. No GitHub Release has been published yet; this repository commit contains source code and build workflows. The versioned installers currently present in the local ignored `release-artifacts` folder were built before the official FPKG Builder rename and are not included in this repository. Do not treat them as current FPKG Builder release packages.
+FPKG Builder targets x86-64 Linux. The v0.1.0 installers are published on the [GitHub Releases page](https://github.com/rileyadams05/FPKG-Builder/releases). Available formats are Debian `.deb`, Arch `.pkg.tar.zst`, and RPM `.rpm`. They passed automated distribution-container build and smoke checks; PS4 Linux Mint hardware and real Itemzflow dump testing remain pending.
 
-When a matching FPKG Builder `.deb` is available, install it on Linux Mint, Ubuntu, or Debian with:
+Download the `.deb` for your architecture from GitHub Releases, then install it on Linux Mint, Ubuntu, or Debian with:
 
 ```sh
 sudo apt install ./FPKG-Builder-0.1.0-linux-x64.deb
