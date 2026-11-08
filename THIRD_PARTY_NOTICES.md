@@ -1,6 +1,6 @@
 # Third-party notices
 
-FPKG Builder was created and is maintained by Riley Adams (`rileyadams05`). The credits below identify upstream projects whose code or technical work FPKG Builder uses or references. Other contributors remain credited by their respective projects and in the affected source files where applicable.
+FPKG Builder was created and is maintained by (`rileyadams05`) The credits below identify upstream projects whose code or technical work FPKG Builder uses or references. Other contributors remain credited by their respective projects and in the affected source files where applicable.
 
 ## LibOrbisPkg
 
