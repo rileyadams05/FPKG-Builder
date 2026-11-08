@@ -34,7 +34,6 @@ FPKG Builder is built for 64-bit x86 Linux systems.
 | Arch Linux and Manjaro | `.pkg.tar.zst` | x86-64 |
 | Fedora and compatible RPM-based distributions | `.rpm` | x86-64 |
 
-Linux Mint 22.3 XFCE is the primary target for use on PS4 Linux.
 
 ## Releases
 
