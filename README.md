@@ -24,9 +24,6 @@ FPKG Builder packages target 64-bit x86 Linux systems.
 
 Release downloads include installation and Itemzflow-to-fPKG instructions. Community packaging for other distributions is welcome through pull requests, but a format is not officially supported until it has been reviewed and tested. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Project and release status
-
-The current application version is **0.1.1**. GitHub Actions builds the Linux packages from the same Tauri 2 interface and .NET 8/LibOrbisPkg engine, runs controlled base-game and base-plus-update fixtures, validates package output, installs and launches the Debian package, and installs and launches the RPM package in Fedora. Testing with a real Itemzflow dump on PS4 Linux Mint hardware is for the user to perform; package validation does not establish that a package installs or runs on a PS4.
 
 <details>
 <summary>Credits and licensing</summary>
