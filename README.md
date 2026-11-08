@@ -16,7 +16,7 @@ FPKG Builder packages target 64-bit x86 Linux systems.
 
 | Linux distribution | Installer | Architecture |
 |---|---|---|
-| Linux Mint and compatible Debian-based distributions | `.deb` | x86-64 |
+| Linux Mint and compatible Deb-based distributions | `.deb` | x86-64 |
 | Fedora and compatible RPM-based distributions | `.rpm` | x86-64 |
 
 [![Download latest release](https://img.shields.io/github/v/release/rileyadams05/FPKG-Builder?style=for-the-badge&label=Download%20latest%20release)](https://github.com/rileyadams05/FPKG-Builder/releases/latest)
