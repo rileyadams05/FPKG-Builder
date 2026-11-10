@@ -1,26 +1,30 @@
-# Build and test record
+# Build and test status
 
-## Release build checks
+## Changes under verification
 
-The `Linux packages` GitHub Actions workflow runs against the exact source commit used for a release. Publishing is gated on successful completion of both the Linux build/fixture job and the Fedora package-install/launch job.
+This working tree contains the PS4 feedback fixes; the published v0.1.1 package does not contain them.
 
-The Linux job:
+- The PlayGo allocation failure is caused by an upstream one-pass estimate in `PkgBuilder.BuildPkg`: it sizes the `playgo-chunk.sha` entry before the final PKG body alignment. The hash entry can push the body across a `0x80000` boundary, increasing the final PKG size and required SHA table after reservation. It is an internal metadata-size bug, not evidence that Linux ran out of disk space.
+- The revised LibOrbisPkg code computes the reservation iteratively using the final body alignment and PFS size. The regression runner includes a fixed case that requires 68 bytes where the prior one-pass estimate reserved only 36, plus an alignment-boundary sweep.
+- The external Update.pkg path now requires PS4 patch content type `DP` (not base-game `GD`), verifies the title ID and package validation, reads the uncompressed inner-PFS size, checks free external space for extraction and the combined output, extracts to a temporary directory beside the Itemzflow folder, and removes that workspace afterward.
+- The desktop bridge rejects the Linux root device, partitions on the same physical disk as root, unsupported filesystems, non-block mounts, unwritable destinations, insufficient free space, and an output folder that is not on the selected dump's mount. The partial PKG and final `FPKG/<content-id>.pkg` are on that same external filesystem. The engine has no large-file `/tmp` staging or internal copy step.
+- The Linux workflow has synthetic package checks for GP4 generation/reuse, a matching Itemzflow patch, a generated `DP` Update.pkg processed into exactly one validated output, source-file preservation, and the PlayGo allocation regression.
 
-- Publishes the .NET 8 helper as a self-contained `linux-x64` application.
-- Exercises generated and existing GP4 paths, including GP4s with Orbis-style source paths, and checks that existing GP4 files remain unchanged.
-- Processes a base-game fixture with a matching update fixture and checks for the single expected `.pkg` output, package validation, and unchanged source GP4s.
-- Includes optional DLC-named fixture content, log files, and completion markers to verify they do not become extra package outputs or get modified.
-- Checks structured measured-progress events and rejects invalid input.
-- Builds the Tauri `.deb` and `.rpm`, installs the `.deb` on Ubuntu, and smoke-launches the app.
+## Checks run in this workspace
 
-The Fedora job installs the generated `.rpm` and smoke-launches the GUI. The release job then checks that version metadata agrees, prepares only the `.deb`, `.rpm`, source archive, and `SHA256SUMS`, and creates the matching GitHub Release. No Arch package is built or released.
+| Check | Result |
+|---|---|
+| `npm test` | Passed: 2 frontend formatting/time tests. |
+| `npm run build` | Passed: Vite production build. |
+| `cargo fmt --manifest-path src-tauri/Cargo.toml --check` | Passed. |
+| `git diff --check` | Passed. |
+| .NET helper build and synthetic PKG/PlayGo tests | Not run: this Windows environment has .NET runtimes but no .NET SDK. |
+| Rust compile and Tauri package build | Not run: Cargo cannot reach `static.crates.io` in this environment; required crates are not all cached. |
+| Native Linux package installation/launch | Not run locally: this workspace is Windows and has no usable Linux VM/container. |
+| PS4 Linux Mint build with a real Itemzflow dump | Pending: requires another test on Riley's PS4. |
 
-## Previously completed Linux run
+The Linux GitHub Actions workflow runs the .NET regression and fixture suite and builds/installs the Debian and RPM packages. These new changes have not yet been pushed or run there, so no CI pass is claimed for them.
 
-GitHub Actions run [42473961512](https://github.com/rileyadams05/FPKG-Builder/actions/runs/42473961512) passed on source commit `3488d21856b6f147fdc808d9b7b73b175bdcedad`. The Linux fixture/build job and Fedora and Arch jobs all succeeded. This run used version `0.1.0` metadata, so its package files are not reused for the `0.1.1` release. The versioned release workflow builds new packages from its own release commit before publishing.
+## Hardware acceptance still required
 
-Earlier Arch package smoke checks are retained here as development history only. Arch and Manjaro are not official package targets.
-
-## Still requires PS4 testing
-
-No real Itemzflow game dump has been tested on PS4 Linux Mint hardware in this build environment. Riley will perform the console test. Structural LibOrbisPkg validation confirms available package checks only; it does not prove PS4 installation or gameplay compatibility. The Linux Mint 22.3 XFCE PS4 test checklist is in [`ps4-linux-mint-test.md`](ps4-linux-mint-test.md).
+After a Linux build from these fixes is available, test with the PS4 Linux Mint 22.3 XFCE setup and a real Itemzflow base-game dump on an external drive. Confirm the build reaches PlayGo digest generation, validates the single `.pkg`, and leaves the dump/GP4/markers/logs untouched. Also test an Itemzflow patch and a readable fake-signed `Update.pkg` separately. No package-install or gameplay result should be inferred from LibOrbisPkg structural validation.

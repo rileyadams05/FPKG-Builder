@@ -53,6 +53,9 @@ namespace LibOrbisPkg.PFS
     { }
 
     public int SectorSize => hdr.BlockSz;
+
+    /// <summary>The uncompressed PFS image length recorded in the PFSC header.</summary>
+    public long DataLength => hdr.DataLength;
     
     /// <summary>
     /// Reads the sector at the given index into the given byte array.

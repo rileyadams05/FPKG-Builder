@@ -19,6 +19,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+      - name: Test PlayGo chunk-hash allocation regression
+        run: dotnet run --project src/Vortex.Engine.PlayGo.Tests/Vortex.Engine.PlayGo.Tests.csproj --configuration Release
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Tauri Linux dependencies
         run: |
@@ -90,6 +92,21 @@ jobs:
           test "$patch_gp4_hash" = "$(sha256sum "$testroot/merged/Itemzflow/CUSA00001-patch/CUSA00001.gp4" | cut -d' ' -f1)"
           test -f "$testroot/merged/Itemzflow/CUSA00001.complete"
           test -f "$testroot/merged/Itemzflow/daemon.log"
+          mkdir -p "$testroot/update-source/CUSA00001-patch" "$testroot/update-pkg/Itemzflow/CUSA00001"
+          "$helper" fixture "$testroot/update-source/CUSA00001-patch"
+          "$helper" gp4 "$testroot/update-source/CUSA00001-patch" "$testroot/update-source/CUSA00001-patch/CUSA00001.gp4"
+          sed -i 's/pkg_ps4_app/pkg_ps4_patch/' "$testroot/update-source/CUSA00001-patch/CUSA00001.gp4"
+          "$helper" build-dump "$testroot/update-source/CUSA00001-patch" "$testroot/update-source-package"
+          update_pkg="$(find "$testroot/update-source-package" -maxdepth 1 -type f -name '*.pkg' -print -quit)"
+          test -n "$update_pkg"
+          "$helper" fixture "$testroot/update-pkg/Itemzflow/CUSA00001"
+          cp "$update_pkg" "$testroot/update-pkg/Itemzflow/Update.pkg"
+          update_pkg_hash="$(sha256sum "$testroot/update-pkg/Itemzflow/Update.pkg" | cut -d' ' -f1)"
+          "$helper" process "$testroot/update-pkg/Itemzflow" "$testroot/update-pkg-output" > "$testroot/update-pkg.jsonl"
+          jq -e 'select(.event == "update-merged" and .source == "Update.pkg")' "$testroot/update-pkg.jsonl" >/dev/null
+          jq -e 'select(.event == "completed" and .validation == "passed")' "$testroot/update-pkg.jsonl" >/dev/null
+          test "$(find "$testroot/update-pkg-output" -maxdepth 1 -type f -name '*.pkg' | wc -l)" -eq 1
+          test "$update_pkg_hash" = "$(sha256sum "$testroot/update-pkg/Itemzflow/Update.pkg" | cut -d' ' -f1)"
           mkdir -p "$testroot/itemzflow"
           "$helper" fixture "$testroot/itemzflow/CUSA00001"
           "$helper" gp4 "$testroot/itemzflow/CUSA00001" "$testroot/itemzflow/CUSA00001/CUSA00001.gp4"

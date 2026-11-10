@@ -1,17 +1,21 @@
 using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Diagnostics;
+using System.IO.MemoryMappedFiles;
 using LibOrbisPkg.GP4;
+using LibOrbisPkg.PFS;
 using LibOrbisPkg.PKG;
 using LibOrbisPkg.SFO;
 
 return args.Length == 0 ? Usage() : args[0] switch
 {
     "fixture" when args.Length == 2 => CreateFixture(args[1]),
+    "inspect-itemzflow" when args.Length == 2 => InspectItemzflow(args[1]),
     "gp4" when args.Length == 3 => GenerateGp4(args[1], args[2]),
     "inspect" when args.Length == 2 => Inspect(args[1]),
     "generate-gp4" when args.Length == 2 => GenerateWhenMissing(args[1]),
-    "process" when args.Length == 3 => ProcessInput(args[1], args[2]),
+    "process" when args.Length == 3 => ProcessInput(args[1], args[2], "auto"),
+    "process" when args.Length == 4 => ProcessInput(args[1], args[2], args[3]),
     "discover" when args.Length <= 2 => DiscoverDumps(args.Length == 2 ? args[1] : null),
     "build-dump" when args.Length == 3 => BuildDump(args[1], args[2]),
     "build" when args.Length == 3 => Build(args[1], args[2]),
@@ -100,14 +104,52 @@ static (Gp4Project Project, int FileCount, DumpMetadata Metadata) CreateGp4Proje
     return (project, count, metadata);
 }
 
-static int ProcessInput(string inputPath, string outputFolder)
+static int InspectItemzflow(string inputPath)
+{
+    try
+    {
+        var input = Path.GetFullPath(inputPath);
+        if (!Directory.Exists(input)) throw new DirectoryNotFoundException($"Itemzflow folder not found: {input}");
+        var games = Directory.EnumerateDirectories(input, "*", SearchOption.TopDirectoryOnly)
+            .Where(path => (File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0 && HasSfo(path)).ToList();
+        var baseFolders = games.Where(path => !Path.GetFileName(path).EndsWith("-patch", StringComparison.OrdinalIgnoreCase)
+            && !Path.GetFileName(path).Contains("-dlc", StringComparison.OrdinalIgnoreCase)
+            && !IsDlcDumpFolder(path)).ToList();
+        if (baseFolders.Count != 1) throw new InvalidDataException(baseFolders.Count == 0
+            ? "No base-game folder was found inside Itemzflow."
+            : "More than one base-game folder was found. Keep one game in the Itemzflow folder at a time.");
+        var baseFolder = baseFolders[0];
+        var metadata = ReadDumpMetadata(baseFolder);
+        if (!Path.GetFileName(baseFolder).Equals(metadata.TitleId, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("The base-game folder name must match its TITLE_ID.");
+        var patch = Path.Combine(input, metadata.TitleId + "-patch");
+        var hasPatch = Directory.Exists(patch);
+        if (hasPatch && !HasSfo(patch)) throw new InvalidDataException("The matching -patch folder has no sce_sys/param.sfo.");
+        var updatePkg = Path.Combine(input, "Update.pkg");
+        if (hasPatch && File.Exists(updatePkg)) throw new InvalidDataException("Both a matching Itemzflow update folder and Update.pkg are present. Keep only one update source in the Itemzflow folder.");
+        var detectedUpdate = hasPatch || File.Exists(updatePkg);
+        EmitEvent(new {
+            @event = "dump-inspected", inputPath = input, basePath = baseFolder,
+            title = metadata.Title, titleId = metadata.TitleId, contentId = metadata.ContentId,
+            hasUpdate = detectedUpdate, updateKind = hasPatch ? "itemzflow-folder" : File.Exists(updatePkg) ? "pkg" : null,
+            updatePath = hasPatch ? patch : File.Exists(updatePkg) ? updatePkg : null,
+            hasGp4 = FindExistingGp4(baseFolder, metadata.TitleId, metadata.ContentId) is not null
+        });
+        return 0;
+    }
+    catch (Exception ex) { return Fail(ex.Message); }
+}
+
+static int ProcessInput(string inputPath, string outputFolder, string updateChoice)
 {
     var timer = Stopwatch.StartNew();
     var input = Path.GetFullPath(inputPath);
     if (!Directory.Exists(input)) return Fail($"Drop the Itemzflow folder that contains your game dump folders: {input}");
     if (!string.Equals(Path.GetFileName(Path.TrimEndingDirectorySeparator(input)), "Itemzflow", StringComparison.OrdinalIgnoreCase))
         return Fail("Drop the complete folder named Itemzflow. It should contain the CUSA game folder and, when present, its matching -patch folder.");
+    EnsureExpectedExternalMount(outputFolder);
 
+    string? extractedUpdate = null;
     try
     {
         var games = Directory.EnumerateDirectories(input, "*", SearchOption.TopDirectoryOnly)
@@ -122,6 +164,7 @@ static int ProcessInput(string inputPath, string outputFolder)
                 : "More than one base-game folder was found. Put one game's files in the Itemzflow folder at a time.");
 
         var baseFolder = baseFolders[0];
+        var projectRoot = Path.GetDirectoryName(input) ?? input;
         var metadata = ReadDumpMetadata(baseFolder);
         if (!Path.GetFileName(baseFolder).Equals(metadata.TitleId, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("The base-game folder name must match its TITLE_ID (for example, CUSA12345).");
@@ -130,6 +173,12 @@ static int ProcessInput(string inputPath, string outputFolder)
             throw new InvalidDataException($"The matching update folder '{Path.GetFileName(patchPath)}' is present but does not contain sce_sys/param.sfo.");
         var patchFolder = games.SingleOrDefault(path =>
             Path.GetFileName(path).Equals(metadata.TitleId + "-patch", StringComparison.OrdinalIgnoreCase));
+        var updatePkg = Path.Combine(input, "Update.pkg");
+        var hasUpdatePkg = File.Exists(updatePkg);
+        if (patchFolder is not null && hasUpdatePkg)
+            throw new InvalidDataException("Both a matching Itemzflow update folder and Update.pkg are present. Keep only one update source in the Itemzflow folder.");
+        if (patchFolder is null && !hasUpdatePkg && string.Equals(updateChoice, "yes", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("No update was found. Place the matching Itemzflow -patch folder or a compatible file named Update.pkg inside the selected Itemzflow folder, then rescan.");
         var unrelated = games.Where(path => !string.Equals(path, baseFolder, StringComparison.OrdinalIgnoreCase)
             && !string.Equals(path, patchFolder, StringComparison.OrdinalIgnoreCase)
             && !Path.GetFileName(path).Contains("-dlc", StringComparison.OrdinalIgnoreCase)
@@ -137,25 +186,43 @@ static int ProcessInput(string inputPath, string outputFolder)
         if (unrelated.Count > 0)
             throw new InvalidDataException("Itemzflow contains another game or an unrecognized dump folder. Keep only the selected base game and its matching -patch folder together.");
 
-        EmitEvent(new { @event = "input-accepted", inputType = patchFolder is null ? "base-game" : "base-game-and-update", inputPath = input, titleId = metadata.TitleId, title = metadata.Title });
-        var project = LoadOrGenerateDumpProject(baseFolder, input, metadata, true, out var baseGp4Mode);
+        var includeUpdate = patchFolder is not null || hasUpdatePkg;
+        EmitEvent(new { @event = "input-accepted", inputType = includeUpdate ? "base-game-and-update" : "base-game", inputPath = input, titleId = metadata.TitleId, title = metadata.Title });
+        var project = LoadOrGenerateDumpProject(baseFolder, projectRoot, metadata, true, out var baseGp4Mode);
         EmitEvent(new { @event = "gp4-ready", mode = baseGp4Mode, titleId = metadata.TitleId });
         if (patchFolder is not null)
         {
             var patchMetadata = ReadDumpMetadata(patchFolder);
             if (!string.Equals(metadata.TitleId, patchMetadata.TitleId, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("The update folder does not match the base game's title ID.");
-            MergePatchProject(project, input, patchFolder, patchMetadata);
+            MergePatchProject(project, projectRoot, patchFolder, patchMetadata);
             EmitEvent(new { @event = "update-merged", titleId = metadata.TitleId });
         }
-        var validation = Gp4Validator.ValidateProject(project, input);
+        else if (hasUpdatePkg)
+        {
+            extractedUpdate = Path.Combine(projectRoot, $".fpkg-builder-update-{Guid.NewGuid():N}");
+            EnsureExpectedExternalMount(outputFolder);
+            Directory.CreateDirectory(extractedUpdate);
+            var patchMetadata = ExtractUpdatePackage(updatePkg, extractedUpdate, metadata.TitleId, project, projectRoot, outputFolder);
+            MergePatchProject(project, projectRoot, extractedUpdate, patchMetadata);
+            EmitEvent(new { @event = "update-merged", titleId = metadata.TitleId, source = "Update.pkg" });
+        }
+        var validation = Gp4Validator.ValidateProject(project, projectRoot);
         foreach (var issue in validation) Console.Error.WriteLine($"{issue.Type}: {issue.Message}");
         if (validation.Any(x => x.Type == ValidateResult.ResultType.Fatal))
             throw new InvalidDataException("The combined base-game/update project did not pass LibOrbisPkg validation.");
 
-        return BuildProject(project, input, outputFolder, structuredProgress: true, metadata: metadata, jobTimer: timer);
+        return BuildProject(project, projectRoot, outputFolder, structuredProgress: true, metadata: metadata, jobTimer: timer);
     }
     catch (Exception ex) { return Fail(ex.Message); }
+    finally
+    {
+        if (extractedUpdate is not null && Directory.Exists(extractedUpdate))
+        {
+            try { Directory.Delete(extractedUpdate, recursive: true); }
+            catch (Exception cleanupError) { Console.Error.WriteLine($"Temporary update extraction could not be removed: {cleanupError.Message}"); }
+        }
+    }
 }
 
 static Gp4Project LoadOrGenerateDumpProject(string dumpFolder, string projectRoot, DumpMetadata metadata, bool isBaseGame, out string mode)
@@ -244,6 +311,97 @@ static void MergePatchProject(Gp4Project baseProject, string projectRoot, string
         }
         AddTargetDirectories(baseProject, target);
     }
+}
+
+static DumpMetadata ExtractUpdatePackage(string pkgPath, string destination, string expectedTitleId, Gp4Project baseProject, string projectRoot, string outputFolder)
+{
+    using var mapped = MemoryMappedFile.CreateFromFile(pkgPath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+    using var packageStream = mapped.CreateViewStream(0, 0, MemoryMappedFileAccess.Read);
+    var pkg = new PkgReader(packageStream).ReadPkg();
+    var contentIdMatch = Regex.Match(pkg.Header.content_id ?? string.Empty, "^[A-Z]{2}[0-9]{4}-([A-Z0-9]{9})_00-[A-Z0-9]{16}$");
+    if (!contentIdMatch.Success || !string.Equals(contentIdMatch.Groups[1].Value, expectedTitleId, StringComparison.OrdinalIgnoreCase))
+        throw new InvalidDataException("Update.pkg has a different or invalid TITLE_ID; it cannot be combined with this base game.");
+    if (pkg.Header.content_type != ContentType.DP)
+        throw new InvalidDataException("Update.pkg is not a PS4 patch package (DP content type). A base-game PKG cannot be used as an update.");
+    var updateSfo = pkg.ParamSfo?.ParamSfo ?? throw new InvalidDataException("Update.pkg has no readable param.sfo metadata entry.");
+    var updateTitleId = updateSfo["TITLE_ID"]?.ToString();
+    var updateContentId = updateSfo["CONTENT_ID"]?.ToString();
+    if (!string.Equals(updateTitleId, expectedTitleId, StringComparison.OrdinalIgnoreCase) ||
+        !string.Equals(updateContentId, pkg.Header.content_id, StringComparison.OrdinalIgnoreCase))
+        throw new InvalidDataException("Update.pkg param.sfo metadata does not match its PKG header or the base game's TITLE_ID.");
+    packageStream.Position = 0;
+    var validation = new PkgValidator(pkg).Validate(packageStream).ToList();
+    var failures = validation.Where(x => x.Item2 == PkgValidator.ValidationResult.Fail).ToList();
+    if (failures.Count > 0)
+        throw new InvalidDataException("Update.pkg failed LibOrbisPkg validation and was not extracted: " + string.Join("; ", failures.Select(x => x.Item1.Name)));
+
+    using var outerView = mapped.CreateViewAccessor((long)pkg.Header.pfs_image_offset, (long)pkg.Header.pfs_image_size, MemoryMappedFileAccess.Read);
+    var outer = new PfsReader(outerView, pkg.Header.pfs_flags, pkg.GetEkpfs());
+    var innerFile = outer.GetFile("pfs_image.dat") ?? throw new InvalidDataException("Update.pkg has no inner game PFS image.");
+    using var compressedInner = innerFile.GetView();
+    using var decompressedInner = new PFSCReader(compressedInner);
+    EnsureUpdateExtractionSpace(decompressedInner.DataLength, baseProject, projectRoot, outputFolder);
+    EnsureExpectedExternalMount(outputFolder);
+    var metadataDirectory = Path.Combine(destination, "sce_sys");
+    Directory.CreateDirectory(metadataDirectory);
+    File.WriteAllBytes(Path.Combine(metadataDirectory, "param.sfo"), updateSfo.Serialize());
+    var inner = new PfsReader(decompressedInner);
+    foreach (var file in inner.GetAllFiles())
+    {
+        var relative = file.FullName.TrimStart('/');
+        if (relative.StartsWith("uroot/", StringComparison.OrdinalIgnoreCase)) relative = relative[6..];
+        relative = NormalizeGp4RelativePath(relative, "Update.pkg path");
+        var target = Path.GetFullPath(Path.Combine(destination, relative.Replace('/', Path.DirectorySeparatorChar)));
+        if (!IsWithin(destination, target)) throw new InvalidDataException($"Update.pkg contains an unsafe path: {file.FullName}");
+        EnsureExpectedExternalMount(outputFolder);
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        using var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.SequentialScan);
+        using var source = file.GetView();
+        var buffer = new byte[1024 * 1024];
+        long offset = 0;
+        while (offset < file.size)
+        {
+            var count = (int)Math.Min(buffer.Length, file.size - offset);
+            source.Read(offset, buffer, 0, count);
+            output.Write(buffer, 0, count);
+            offset += count;
+        }
+    }
+    var metadata = ReadDumpMetadata(destination);
+    if (!string.Equals(metadata.TitleId, expectedTitleId, StringComparison.OrdinalIgnoreCase))
+        throw new InvalidDataException("The extracted Update.pkg metadata does not match the base game TITLE_ID.");
+    return metadata;
+}
+
+static void EnsureUpdateExtractionSpace(long expandedUpdateBytes, Gp4Project baseProject, string projectRoot, string outputFolder)
+{
+    if (expandedUpdateBytes <= 0)
+        throw new InvalidDataException("Update.pkg contains an invalid compressed PFS size.");
+
+    long baseBytes = 0;
+    foreach (var file in baseProject.files.Items)
+    {
+        var source = Path.GetFullPath(Path.Combine(projectRoot, (file.OrigPath ?? file.TargetPath)
+            .Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar)));
+        if (!File.Exists(source)) throw new FileNotFoundException($"A base-game source file is missing: {file.TargetPath}");
+        baseBytes = checked(baseBytes + new FileInfo(source).Length);
+    }
+
+    // Update.pkg extraction and the final combined package coexist on the external
+    // drive while the build runs. Estimate the package as base + expanded update,
+    // then reserve 10% (at least 256 MiB) for PFS/PKG metadata and filesystem slack.
+    var packageEstimate = checked(baseBytes + expandedUpdateBytes);
+    var safetyMargin = Math.Max(packageEstimate / 10, 256L * 1024 * 1024);
+    var required = checked(expandedUpdateBytes + packageEstimate + safetyMargin);
+    var output = Path.GetFullPath(outputFolder);
+    var drive = DriveInfo.GetDrives()
+        .Where(d => d.IsReady && output.StartsWith(Path.GetFullPath(d.Name), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        .OrderByDescending(d => d.Name.Length)
+        .FirstOrDefault();
+    if (drive is null)
+        throw new IOException("Could not identify the external drive for Update.pkg extraction and package output.");
+    if (drive.AvailableFreeSpace < required)
+        throw new IOException($"Not enough free space on the external drive for Update.pkg extraction and the combined package. About {FormatBytes(required)} is needed; {FormatBytes(drive.AvailableFreeSpace)} is available.");
 }
 
 static void AddTargetDirectories(Gp4Project project, string target)
@@ -631,6 +789,37 @@ static bool IsWithin(string root, string path)
     return relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) && !Path.IsPathRooted(relative);
 }
 
+static void EnsureExpectedExternalMount(string outputPath)
+{
+    var expectedDevice = Environment.GetEnvironmentVariable("FPKG_BUILDER_EXPECTED_MOUNT_DEVICE");
+    if (string.IsNullOrWhiteSpace(expectedDevice)) return;
+
+    var fullOutput = Path.GetFullPath(outputPath);
+    string? actualDevice = null;
+    var bestMountDepth = -1;
+    foreach (var line in File.ReadLines("/proc/self/mountinfo"))
+    {
+        var separator = line.IndexOf(" - ", StringComparison.Ordinal);
+        if (separator < 0) continue;
+        var fields = line[..separator].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (fields.Length < 5) continue;
+        var mountPoint = fields[4]
+            .Replace("\\040", " ", StringComparison.Ordinal)
+            .Replace("\\011", "\t", StringComparison.Ordinal)
+            .Replace("\\012", "\n", StringComparison.Ordinal)
+            .Replace("\\134", "\\", StringComparison.Ordinal);
+        var fullMount = Path.GetFullPath(mountPoint);
+        if (!IsWithin(fullMount, fullOutput)) continue;
+        var depth = fullMount.Count(character => character == Path.DirectorySeparatorChar);
+        if (depth <= bestMountDepth) continue;
+        actualDevice = fields[2];
+        bestMountDepth = depth;
+    }
+
+    if (!string.Equals(actualDevice, expectedDevice, StringComparison.Ordinal))
+        throw new IOException("The external drive became unavailable or the FPKG folder moved to a different filesystem. The package build was stopped before opening its output file.");
+}
+
 static int BuildProject(Gp4Project project, string projectDirectory, string outputFolder, bool structuredProgress = false, DumpMetadata? metadata = null, Stopwatch? jobTimer = null)
 {
     jobTimer ??= Stopwatch.StartNew();
@@ -700,7 +889,8 @@ static int BuildProject(Gp4Project project, string projectDirectory, string outp
         new PkgBuilder(PkgProperties.FromGp4(project, projectDirectory)).Write(
             partialPath,
             Log,
-            EmitMeasuredProgress);
+            EmitMeasuredProgress,
+            () => EnsureExpectedExternalMount(output));
 
         Emit(new { @event = "validation-started", packagePath });
         using var package = File.OpenRead(partialPath);
@@ -715,6 +905,7 @@ static int BuildProject(Gp4Project project, string projectDirectory, string outp
             File.Delete(partialPath);
             return Fail("Package validation reported a failure; the incomplete output was removed.");
         }
+        EnsureExpectedExternalMount(output);
         File.Move(partialPath, packagePath);
         Emit(new
         {
@@ -749,8 +940,13 @@ static void EnsureOutputSpaceAndPreserveSource(Gp4Project project, string projec
 {
     var sourceRoot = Path.GetFullPath(projectDirectory);
     var output = Path.GetFullPath(outputFolder);
-    if (IsWithin(sourceRoot, output))
-        throw new InvalidOperationException("Choose an output folder outside the dump/project folder. This protects the original dump from package output.");
+    foreach (var file in project.files.Items)
+    {
+        var source = Path.GetFullPath(Path.Combine(sourceRoot, (file.OrigPath ?? file.TargetPath).Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar)));
+        var sourceDirectory = Path.GetDirectoryName(source)!;
+        if (IsWithin(sourceDirectory, output) || IsWithin(output, source))
+            throw new InvalidOperationException("The package output folder overlaps a source folder. The original dump must remain separate from FPKG output.");
+    }
     Directory.CreateDirectory(output);
 
     long sourceBytes = 0;
@@ -807,3 +1003,4 @@ static int Fail(string message)
 }
 
 record DumpMetadata(string TitleId, string ContentId, string Title);
+

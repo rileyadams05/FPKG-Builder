@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -92,6 +92,8 @@ namespace LibOrbisPkg.GP4
       switch (pkgType)
       {
         case VolumeType.pkg_ps4_app:
+          // Patch GP4s are valid package inputs used by Itemzflow updates and Update.pkg fixtures.
+        case VolumeType.pkg_ps4_patch:
           break;
         case VolumeType.pkg_ps4_ac_data:
           break;
@@ -207,3 +209,4 @@ namespace LibOrbisPkg.GP4
     }
   }
 }
+

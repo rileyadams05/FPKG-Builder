@@ -52,12 +52,13 @@ namespace LibOrbisPkg.PKG
     /// <param name="filename">Output filename</param>
     /// <param name="Logger">Log lines are written as calls to this function, if provided</param>
     /// <returns>Completed Pkg structure</returns>
-    public Pkg Write(string filename, Action<string> logger = null, Action<PkgBuildProgress> progress = null)
+    public Pkg Write(string filename, Action<string> logger = null, Action<PkgBuildProgress> progress = null, Action beforeOutputCreate = null)
     {
       Logger = logger ?? Console.WriteLine;
       Progress = progress;
       ReportProgress("preparing", "package", 0, null);
       InitPkg();
+      beforeOutputCreate?.Invoke();
       var totalSize = (long)(pkg.Header.body_offset + pkg.Header.body_size + pkg.Header.pfs_image_size);
       var pkgFile = MemoryMappedFile.CreateFromFile(
         filename, 
@@ -289,6 +290,47 @@ namespace LibOrbisPkg.PKG
     }
 
     /// <summary>
+    /// Reserves the PlayGo chunk-hash entry using the final aligned PKG size.
+    /// The hash entry itself changes the package size, so its required size is
+    /// calculated to a fixed point instead of estimating the package once with
+    /// the hash entry omitted.
+    /// </summary>
+    public static uint CalculatePlayGoChunkShaReservation(
+      ulong bodyOffset,
+      ulong offsetBeforeChunkSha,
+      IReadOnlyList<uint> followingEntrySizes,
+      ulong pfsImageSize)
+    {
+      if (offsetBeforeChunkSha < bodyOffset)
+        throw new ArgumentOutOfRangeException(nameof(offsetBeforeChunkSha));
+      if (followingEntrySizes == null)
+        throw new ArgumentNullException(nameof(followingEntrySizes));
+
+      ulong reservation = 0;
+      for (var attempt = 0; attempt < 64; attempt++)
+      {
+        var endOffset = AlignChecked(checked(offsetBeforeChunkSha + reservation), 16);
+        foreach (var size in followingEntrySizes)
+          endOffset = AlignChecked(checked(endOffset + size), 16);
+
+        var alignedBodyEnd = AlignChecked(endOffset, 0x80000);
+        var packageSize = checked(checked(alignedBodyEnd + pfsImageSize));
+        var required = checked(4UL * (packageSize / 0x10000UL));
+        if (required == reservation)
+          return checked((uint)required);
+        reservation = required;
+      }
+
+      throw new InvalidOperationException("PlayGo chunk-hash allocation did not converge.");
+    }
+
+    private static ulong AlignChecked(ulong value, ulong alignment)
+    {
+      var remainder = value % alignment;
+      return remainder == 0 ? value : checked(value + alignment - remainder);
+    }
+
+    /// <summary>
     /// Creates the Pkg object. Initializes the header and body.
     /// </summary>
     public void BuildPkg(long pfsSize)
@@ -456,8 +498,9 @@ namespace LibOrbisPkg.PKG
         { EntryId.LICENSE_DAT, 3u << 12 },
         { EntryId.LICENSE_INFO, 2u << 12 },
       };
-      foreach (var entry in pkg.Entries)
+      for (var entryIndex = 0; entryIndex < pkg.Entries.Count; entryIndex++)
       {
+        var entry = pkg.Entries[entryIndex];
         var e = new MetaEntry
         {
           id = entry.Id,
@@ -475,13 +518,15 @@ namespace LibOrbisPkg.PKG
         }
         if(entry == pkg.ChunkSha)
         {
-          // Estimate size of PKG without the ChunkSHA
-          long pkgSize = Align(
-            (long)pkg.Header.body_offset + pkg.Entries.Sum(x => Align(x.Length, 16)),
-            0x80000) + pfsSize;
-          // Add the size of the chunk SHAs, plus an extra 16 bytes for good measure
-          pkgSize += ((pkgSize + 16) / 0x10000) * 4;
-          e.DataSize = (uint)(pkgSize / 0x10000L) * 4;
+          var followingEntrySizes = pkg.Entries
+            .Skip(entryIndex + 1)
+            .Select(x => x == pkg.Metas ? checked((uint)pkg.Entries.Count * 32) : x.Length)
+            .ToArray();
+          e.DataSize = CalculatePlayGoChunkShaReservation(
+            pkg.Header.body_offset,
+            dataOffset,
+            followingEntrySizes,
+            checked((ulong)pfsSize));
         }
 
         dataOffset = Align(dataOffset + e.DataSize, 16);
