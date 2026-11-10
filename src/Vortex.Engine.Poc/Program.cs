@@ -323,6 +323,12 @@ static DumpMetadata ExtractUpdatePackage(string pkgPath, string destination, str
         throw new InvalidDataException("Update.pkg has a different or invalid TITLE_ID; it cannot be combined with this base game.");
     if (pkg.Header.content_type != ContentType.DP)
         throw new InvalidDataException("Update.pkg is not a PS4 patch package (DP content type). A base-game PKG cannot be used as an update.");
+    var updateSfo = pkg.ParamSfo?.ParamSfo ?? throw new InvalidDataException("Update.pkg has no readable param.sfo metadata entry.");
+    var updateTitleId = updateSfo["TITLE_ID"]?.ToString();
+    var updateContentId = updateSfo["CONTENT_ID"]?.ToString();
+    if (!string.Equals(updateTitleId, expectedTitleId, StringComparison.OrdinalIgnoreCase) ||
+        !string.Equals(updateContentId, pkg.Header.content_id, StringComparison.OrdinalIgnoreCase))
+        throw new InvalidDataException("Update.pkg param.sfo metadata does not match its PKG header or the base game's TITLE_ID.");
     packageStream.Position = 0;
     var validation = new PkgValidator(pkg).Validate(packageStream).ToList();
     var failures = validation.Where(x => x.Item2 == PkgValidator.ValidationResult.Fail).ToList();
@@ -335,6 +341,10 @@ static DumpMetadata ExtractUpdatePackage(string pkgPath, string destination, str
     using var compressedInner = innerFile.GetView();
     using var decompressedInner = new PFSCReader(compressedInner);
     EnsureUpdateExtractionSpace(decompressedInner.DataLength, baseProject, projectRoot, outputFolder);
+    EnsureExpectedExternalMount(outputFolder);
+    var metadataDirectory = Path.Combine(destination, "sce_sys");
+    Directory.CreateDirectory(metadataDirectory);
+    File.WriteAllBytes(Path.Combine(metadataDirectory, "param.sfo"), updateSfo.Serialize());
     var inner = new PfsReader(decompressedInner);
     foreach (var file in inner.GetAllFiles())
     {
@@ -993,3 +1003,4 @@ static int Fail(string message)
 }
 
 record DumpMetadata(string TitleId, string ContentId, string Title);
+
