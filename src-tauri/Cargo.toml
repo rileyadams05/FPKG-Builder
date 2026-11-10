@@ -1,6 +1,6 @@
 [package]
 name = "fpkg-builder"
-version = "0.1.1"
+version = "0.1.2"
 description = "Build fPKGs from compatible Itemzflow dumps"
 authors = ["FPKG Builder contributors"]
 repository = "https://github.com/rileyadams05/FPKG-Builder"
@@ -15,6 +15,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+libc = "0.2"
 
 [profile.release]
 codegen-units = 1

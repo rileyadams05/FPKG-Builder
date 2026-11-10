@@ -8,19 +8,21 @@ Itemzflow's dump code prompts with `ASK_FOR_GP4` during applicable dump flows. A
 
 The normal dump directory is `<Dumper_Path>/<TITLE_ID>`. Patches use `<TITLE_ID>-patch`; unlock data uses `<TITLE_ID>-unlock`; DLC uses separate title/content-specific directories. `Dumper_Path` is a `[Settings]` key in `settings.ini`. Itemzflow may load the file from the selected USB root or `/user/app/ITEM00001/settings.ini`, with USB paths commonly under `/mnt/usbN`. Those are Orbis OS paths, not proof that Linux mounted the same location.
 
-The production workflow now accepts only the complete `Itemzflow` folder by drag and drop. The user places one base-game folder and its matching `-patch` folder inside it. The application checks the folder metadata, reuses GP4s where usable, and creates missing GP4 project data in memory. It combines base and matching update entries into a single app package, lets the user choose a save path after validation, and leaves dump files, GP4s, marker files, and logs untouched. DLC is outside this application's scope.
+The production workflow accepts the complete `Itemzflow` folder by drag and drop or folder picker. The user places one base-game folder and, optionally, its matching `-patch` folder or a compatible fake-signed `Update.pkg` inside it. The application checks the title metadata, reuses suitable GP4s, and creates missing GP4 project data in memory. Matching base and update files are assembled into one app package; DLC is outside this application's scope. The builder creates a sibling `FPKG` folder on the same external drive and does not alter the source dump, GP4s, markers, logs, or supplied update PKG.
+
+All large package output and Update.pkg extraction workspace must remain on a separately mounted external block device. Builds are rejected on the Linux root disk, the same physical disk as root, and filesystems that cannot be confirmed to support files larger than 4 GB. A preflight checks mount identity, write access, filesystem type, and available space. LibOrbisPkg builds directly into a partial file in the external `FPKG` folder and atomically renames it only after package validation.
 
 Primary source references: Itemzflow [`utils.cpp`](https://github.com/LightningMods/Itemzflow/blob/main/itemzflow/source/utils.cpp) for settings, [`dump.cpp`](https://github.com/LightningMods/Itemzflow/blob/main/external/libdumper/source/dump.cpp) for dump paths and output, [`gp4.cpp`](https://github.com/LightningMods/Itemzflow/blob/main/external/libdumper/source/gp4.cpp) for project generation/filters, [README](https://github.com/LightningMods/Itemzflow/blob/main/README.md), and [release notes](https://github.com/LightningMods/Itemzflow/releases). These files were inspected for interoperability; Itemzflow implementation code is not copied.
 
 ## Minimum workflow implemented
 
-1. **Drop the prepared folder.** The one input is a directory named `Itemzflow`, containing one base-game folder and optionally the matching `-patch` update.
-2. **Inspect projects and metadata.** Read the SFO metadata, reuse GP4 projects, and resolve their file references safely against the selected Linux folders without rewriting the GP4.
-3. **Prepare and merge.** Generate missing project data in memory. Overlay update files on the base app's target paths, retain the base app metadata, and exclude Itemzflow marker/log files outside the game dump folders.
-4. **Build and validate.** Run LibOrbisPkg in the background and report measured build progress. Validate the single completed package.
-5. **Save.** After validation, ask where to save the one `.pkg`. Copy it safely to the chosen path and show success only after that copy completes.
+1. **Drop the prepared folder.** The one input is a directory named `Itemzflow`, containing one base game and optionally its matching `-patch` folder or `Update.pkg`.
+2. **Inspect projects and metadata.** Read the SFO metadata, reuse GP4 projects, and safely resolve source paths without rewriting GP4 files.
+3. **Ask only when needed.** If no update is detected, ask “Do you have a game update?” with Yes and No. Yes explains how to put the matching update inside the selected folder and rescan; No builds the base game.
+4. **Prepare and merge.** Generate missing GP4 project data in memory. Overlay matching update files on the base app's target paths, retain base-game metadata, and ignore logs and `.complete` markers.
+5. **Build and validate.** Run LibOrbisPkg in the background, report measured stage progress, validate the single package, then finalize it as `FPKG/<content-id>.pkg` on the external drive.
 
-There are no browse, path-entry, GP4-selection, discovery, output-settings, or demo-preview controls in the production interface. Its opening screen is the single folder drop. A cancelled save prompt discards the staged package without changing the dump. Existing destination files are not overwritten.
+The interface is a compact desktop packaging utility modeled on PkgEditor’s menu, toolbar, source tree, metadata, operation log, progress and diagnostic layout. Builds never use an output chooser: the final package is placed in the sibling `FPKG` folder on the same external drive, and existing destination files are not overwritten.
 
 ## Backend and measured progress
 
