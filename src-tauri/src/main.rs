@@ -76,7 +76,7 @@ fn start_build(
         Ok(path) => path,
         Err(error) => return Err(error),
     };
-    let input_path = input_path
+    let input_path = Path::new(&input)
         .canonicalize()
         .map_err(|e| format!("Cannot access selected Itemzflow folder: {e}"))?;
     if !input_path.is_dir()
@@ -87,6 +87,7 @@ fn start_build(
     {
         return Err("Drop the complete folder named Itemzflow.".into());
     }
+    let input = input_path.to_string_lossy().into_owned();
     let (output, expected_device) = validate_external_workspace(&input_path)?;
     if state
         .0
@@ -484,7 +485,7 @@ fn available_bytes(path: &Path) -> Result<u64, String> {
     }
     (stats.f_bavail as u64)
         .checked_mul(stats.f_frsize as u64)
-        .ok_or("External free-space value overflowed.")
+        .ok_or_else(|| "External free-space value overflowed.".to_owned())
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -566,3 +567,4 @@ mod tests {
         );
     }
 }
+
